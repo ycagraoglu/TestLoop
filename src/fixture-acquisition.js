@@ -1,11 +1,21 @@
 import { executeHttp } from './http.js';
 import { selectFixtureCandidate } from './fixture-planner.js';
+import { readPath } from './object-path.js';
+
+const SOURCE_RESOLVERS = Object.freeze({
+  static: resolveStatic,
+  'workflow-output': resolveWorkflowOutput,
+  'http-list': resolveHttpList
+});
 
 export async function acquireFixture(requirement, sources, context = {}) {
   for (const source of sources ?? []) {
-    const result = await trySource(requirement, source, context);
+    const resolver = SOURCE_RESOLVERS[source.type];
+    if (!resolver) continue;
+    const result = await resolver(requirement, source, context);
     if (result?.verified) return result;
   }
+
   return {
     verified: false,
     status: 'BLOCKED',
@@ -15,38 +25,39 @@ export async function acquireFixture(requirement, sources, context = {}) {
   };
 }
 
-async function trySource(requirement, source, context) {
-  if (source.type === 'static') {
-    if (source.verified !== true || source.value === undefined || source.source === 'random') return null;
-    return fixture(requirement, source.value, source.source ?? 'static', source.evidence ?? []);
-  }
+function resolveStatic(requirement, source) {
+  if (source.verified !== true || source.value === undefined || source.source === 'random') return null;
+  return fixture(requirement, source.value, source.source ?? 'static', source.evidence ?? []);
+}
 
-  if (source.type === 'workflow-output') {
-    const value = readPath(context.outputs, source.path ?? requirement.property);
-    if (value === undefined) return null;
-    return fixture(requirement, value, `workflow-output:${source.path ?? requirement.property}`, ['captured from successful producer operation']);
-  }
+function resolveWorkflowOutput(requirement, source, context) {
+  const path = source.path ?? requirement.property;
+  const value = readPath(context.outputs, path);
+  if (value === undefined) return null;
+  return fixture(requirement, value, `workflow-output:${path}`, ['captured from successful producer operation']);
+}
 
-  if (source.type === 'http-list') {
-    const response = await executeHttp({
-      method: source.method ?? 'GET',
-      url: source.url,
-      headers: { ...(context.headers ?? {}), ...(source.headers ?? {}) }
-    });
-    if (!response.ok) return null;
-    const candidates = normalizeCandidates(readPath(response.body, source.itemsPath ?? ''));
-    const selected = selectFixtureCandidate(candidates, source.predicates ?? []);
-    if (!selected) return null;
-    const value = selected[source.idProperty ?? 'id'] ?? selected.Id;
-    if (value === undefined) return null;
-    return fixture(requirement, value, `http-list:${source.url}`, [
-      `HTTP ${response.status}`,
-      `candidate:${source.idProperty ?? 'id'}`,
-      ...(source.predicates ?? []).map(p => `predicate:${p.property}:${p.operator}`)
-    ], selected);
-  }
+async function resolveHttpList(requirement, source, context) {
+  const response = await executeHttp({
+    method: source.method ?? 'GET',
+    url: source.url,
+    headers: { ...(context.headers ?? {}), ...(source.headers ?? {}) }
+  });
+  if (!response.ok) return null;
 
-  return null;
+  const candidates = normalizeCandidates(readPath(response.body, source.itemsPath ?? ''));
+  const selected = selectFixtureCandidate(candidates, source.predicates ?? []);
+  if (!selected) return null;
+
+  const idProperty = source.idProperty ?? 'id';
+  const value = selected[idProperty] ?? selected.Id;
+  if (value === undefined) return null;
+
+  return fixture(requirement, value, `http-list:${source.url}`, [
+    `HTTP ${response.status}`,
+    `candidate:${idProperty}`,
+    ...(source.predicates ?? []).map(predicate => `predicate:${predicate.property}:${predicate.operator}`)
+  ], selected);
 }
 
 function fixture(requirement, value, source, evidence, record = null) {
@@ -66,9 +77,4 @@ function normalizeCandidates(value) {
   if (Array.isArray(value?.data)) return value.data;
   if (Array.isArray(value?.items)) return value.items;
   return [];
-}
-
-function readPath(value, path) {
-  if (!path) return value;
-  return String(path).split('.').reduce((current, part) => current?.[part], value);
 }
