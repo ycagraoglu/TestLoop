@@ -50,12 +50,13 @@ Copy `templates/testloop.config.example.json` and adapt it to the target API. Ru
 
 ## Local release workflow
 
-GitHub Actions is not required for verification, packaging, tagging, or npm publication.
+GitHub Actions is not required for verification, packaging, tagging, npm publication, or GitHub Release creation.
 
-Before the first publication, authenticate once:
+Before the first publication, authenticate the local machine:
 
 ```bash
 npm login
+gh auth login
 ```
 
 Run a release dry-run from a clean, up-to-date local `main` branch:
@@ -63,6 +64,8 @@ Run a release dry-run from a clean, up-to-date local `main` branch:
 ```bash
 npm run release:check -- 0.5.1 --notes "Describe the release"
 ```
+
+The dry-run restores all changed version files after validation.
 
 Publish the release:
 
@@ -73,14 +76,15 @@ npm run release -- 0.5.1 --notes "Describe the release"
 The release command performs these checks and operations in order:
 
 1. Requires a clean local `main` branch that exactly matches `origin/main`.
-2. Verifies npm authentication with `npm whoami`.
+2. Verifies npm and GitHub CLI authentication.
 3. Updates `package.json`, `package-lock.json`, Claude plugin metadata, and `CHANGELOG.md`.
 4. Runs syntax checks, tests, and npm package-content verification.
 5. Creates the release commit and annotated Git tag.
-6. Publishes the public npm package with provenance.
+6. Publishes the public npm package from the local machine.
 7. Pushes the release commit and tag to GitHub.
+8. Creates the GitHub Release through `gh release create`.
 
-If npm publication fails, the local release commit and tag are rolled back. No GitHub repository secret or paid Actions runner is needed.
+If npm publication fails, the local release commit and tag are rolled back. To publish without creating a GitHub Release, pass `--skip-github-release`. No GitHub repository secret or paid Actions runner is needed.
 
 ## Agent integration
 
