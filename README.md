@@ -22,34 +22,38 @@ An endpoint is never marked as failed until its authentication context, required
 
 TestLoop combines three layers:
 
-1. A deterministic local runner for project discovery, OpenAPI parsing, HTTP execution, workflow state, and evidence capture.
+1. A deterministic local runner for project discovery, source analysis, OpenAPI parsing, HTTP execution, workflow state, and evidence capture.
 2. LLM roles for business-rule interpretation, failure diagnosis, repair, and independent review.
 3. A gated orchestrator that prevents invalid state transitions and unnecessary specialist-agent calls.
 
 ```text
-Discover → Plan → Resolve fixtures → Execute → Verify
-                                      │
-                                      └─ unexpected result
-                                                ↓
-                                      Diagnose → Fix → Review → Retest
+Discover → Analyze → Plan → Resolve fixtures → Execute → Verify
+                                                  │
+                                                  └─ unexpected result
+                                                            ↓
+                                                  Diagnose → Fix → Review → Retest
 ```
 
-## Runner MVP
+## Runner
 
-The first deterministic runner is dependency-free and requires Node.js 20 or newer.
+The deterministic runner is dependency-free and requires Node.js 20 or newer.
 
 ```bash
 npm install
 node ./bin/testloop.js discover .
+node ./bin/testloop.js analyze .
 node ./bin/testloop.js openapi https://localhost:7001/swagger/v1/swagger.json
 node ./bin/testloop.js request GET https://localhost:7001/health
+node ./bin/testloop.js workflow run-1 "POST /api/products" SUCCESS SUCCESS SUCCESS SUCCESS SUCCESS PASS
 ```
 
 Available commands:
 
 - `discover [root]`: finds `.sln` and `.csproj` files and identifies ASP.NET Core Web projects.
+- `analyze [root]`: extracts controllers, routes, request DTOs, authorization metadata, FluentValidation rules, entities, and EF Core foreign-key evidence.
 - `openapi <url>`: downloads an OpenAPI/Swagger document and emits its operations as structured JSON.
 - `request <method> <url> [json-body]`: performs a real HTTP request and captures status, headers, body, and duration.
+- `workflow <run-id> <target> [outcomes...]`: applies gated workflow transitions and enforces retry and agent-call budgets.
 
 Run local checks with:
 
@@ -70,7 +74,17 @@ npm test
 
 ## Status
 
-The architecture, workflow contract, initial skill, and deterministic runner foundation are implemented. Fixture resolution, workflow persistence, authentication contexts, and plugin packaging are the next milestones.
+Implemented:
+
+- plugin/skill architecture and workflow contract;
+- project and OpenAPI discovery;
+- real HTTP execution;
+- ASP.NET Core source manifest extraction;
+- EF Core foreign-key evidence extraction;
+- FluentValidation rule extraction;
+- gated workflow transitions, fixture gate, failure classification, and cost budgets.
+
+Next milestones are fixture acquisition, authentication context preparation, API process lifecycle management, persisted run artifacts, and plugin packaging.
 
 ## License
 
