@@ -2,7 +2,7 @@ import { acquireFixture } from './fixture-acquisition.js';
 import { buildFixturePlan } from './fixture-planner.js';
 import { executeHttp } from './http.js';
 import { capturePaths, interpolatePath } from './object-path.js';
-import { redactRequest } from './redaction.js';
+import { redactRequest, redactValue } from './redaction.js';
 import { runRole } from './role-runner.js';
 import { expectedStatusesFor } from './verification-config.js';
 import { classifyExecution } from './workflow.js';
@@ -10,7 +10,7 @@ import { classifyExecution } from './workflow.js';
 export async function runScenario(scenario, context) {
   const fixtures = await resolveFixtures(scenario, context);
   const fixturePlan = createFixturePlan(scenario, fixtures);
-  await context.store.write(`${scenario.id}.fixture.json`, fixturePlan);
+  await context.store.write(`${scenario.id}.fixture.json`, redactValue(fixturePlan));
 
   if (fixturePlan.status !== 'READY') return blockedScenario(scenario, fixturePlan);
 
@@ -26,13 +26,7 @@ export async function runScenario(scenario, context) {
   });
 
   if (classification === 'PASS') {
-    return {
-      id: scenario.id,
-      status: 'PASS',
-      classification,
-      response,
-      output: capturePaths(response.body, scenario.capture)
-    };
+    return { id: scenario.id, status: 'PASS', classification, response, output: capturePaths(response.body, scenario.capture) };
   }
 
   return handleFailure({ scenario, request, response, fixturePlan, classification, expectedStatuses, context });
@@ -45,7 +39,8 @@ async function resolveFixtures(scenario, context) {
     const sources = scenario.fixtureSources?.[requirement.property] ?? scenario.fixtureSources?.[requirement.entity] ?? [];
     const acquired = await acquireFixture(requirement, sources, {
       headers: context.auth.headers,
-      outputs: context.outputs
+      outputs: context.outputs,
+      securityPolicy: context.securityPolicy
     });
     if (acquired.verified) fixtures[requirement.property] = acquired;
   }
@@ -53,15 +48,8 @@ async function resolveFixtures(scenario, context) {
 }
 
 function createFixturePlan(scenario, reusableFixtures) {
-  if (!scenario.requestModel) {
-    return { status: 'READY', payload: scenario.body, fixtureManifest: { dependencies: [] }, blocked: [] };
-  }
-  return buildFixturePlan({
-    requestModel: scenario.requestModel,
-    validator: scenario.validator,
-    supplied: scenario.body ?? {},
-    reusableFixtures
-  });
+  if (!scenario.requestModel) return { status: 'READY', payload: scenario.body, fixtureManifest: { dependencies: [] }, blocked: [] };
+  return buildFixturePlan({ requestModel: scenario.requestModel, validator: scenario.validator, supplied: scenario.body ?? {}, reusableFixtures });
 }
 
 function createRequest(scenario, context, body) {
@@ -76,40 +64,24 @@ function createRequest(scenario, context, body) {
 
 async function executeRequest(request, scenario, context, persistRequest) {
   const response = await executeHttp(request, {
-    timeoutMs: scenario.timeoutMs ?? context.config.timeoutMs ?? 30000
+    timeoutMs: scenario.timeoutMs ?? context.config.timeoutMs ?? 30000,
+    securityPolicy: context.securityPolicy,
+    purpose: 'scenario'
   });
   const name = persistRequest ? `${scenario.id}.execution.json` : `${scenario.id}.retest.json`;
-  const artifact = persistRequest ? { request: redactRequest(request), response } : response;
+  const artifact = persistRequest ? { request: redactRequest(request), response: redactValue(response) } : redactValue(response);
   await context.store.write(name, artifact);
   return response;
 }
 
 async function handleFailure({ scenario, request, response, fixturePlan, classification, expectedStatuses, context }) {
   if (classification !== 'APPLICATION_BUG' || !context.config.roles?.diagnose) {
-    return {
-      id: scenario.id,
-      status: classification === 'INCONCLUSIVE' ? 'BLOCKED' : 'FAIL',
-      classification,
-      response,
-      reason: `Unexpected HTTP ${response.status}.`
-    };
+    return { id: scenario.id, status: classification === 'INCONCLUSIVE' ? 'BLOCKED' : 'FAIL', classification, response, reason: `Unexpected HTTP ${response.status}.` };
   }
 
-  const diagnosis = await runAndStoreRole('diagnose', scenario, {
-    scenario,
-    request: redactRequest(request),
-    response,
-    fixturePlan
-  }, context);
-
+  const diagnosis = await runAndStoreRole('diagnose', scenario, { scenario, request: redactRequest(request), response: redactValue(response), fixturePlan: redactValue(fixturePlan) }, context);
   if (diagnosis.status !== 'APPLICATION_BUG') {
-    return {
-      id: scenario.id,
-      status: diagnosis.status === 'EXPECTED_REJECTION' ? 'PASS' : 'BLOCKED',
-      classification: diagnosis.status,
-      response,
-      diagnosis
-    };
+    return { id: scenario.id, status: diagnosis.status === 'EXPECTED_REJECTION' ? 'PASS' : 'BLOCKED', classification: diagnosis.status, response, diagnosis };
   }
 
   const fix = await runAndStoreRole('fix', scenario, { scenario, diagnosis }, context);
@@ -125,16 +97,11 @@ async function handleFailure({ scenario, request, response, fixturePlan, classif
 }
 
 async function runAndStoreRole(role, scenario, input, context) {
-  const result = await runRole(role, input, context.config.roles);
-  await context.store.write(`${scenario.id}.${role}.json`, result);
+  const result = await runRole(role, input, context.config.roles, context.securityPolicy);
+  await context.store.write(`${scenario.id}.${role}.json`, redactValue(result));
   return result;
 }
 
 function blockedScenario(scenario, fixturePlan) {
-  return {
-    id: scenario.id,
-    status: 'BLOCKED',
-    reason: fixturePlan.blocked.map(item => item.reason).join(' '),
-    fixturePlan
-  };
+  return { id: scenario.id, status: 'BLOCKED', reason: fixturePlan.blocked.map(item => item.reason).join(' '), fixturePlan };
 }

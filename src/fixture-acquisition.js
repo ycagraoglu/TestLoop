@@ -42,6 +42,9 @@ async function resolveHttpList(requirement, source, context) {
     method: source.method ?? 'GET',
     url: source.url,
     headers: { ...(context.headers ?? {}), ...(source.headers ?? {}) }
+  }, {
+    securityPolicy: context.securityPolicy,
+    purpose: 'fixture source'
   });
   if (!response.ok) return null;
 
@@ -57,18 +60,17 @@ async function resolveHttpList(requirement, source, context) {
     `HTTP ${response.status}`,
     `candidate:${idProperty}`,
     ...(source.predicates ?? []).map(predicate => `predicate:${predicate.property}:${predicate.operator}`)
-  ], selected);
+  ]);
 }
 
-function fixture(requirement, value, source, evidence, record = null) {
+function fixture(requirement, value, source, evidence) {
   return {
     verified: true,
     property: requirement.property,
     entity: requirement.entity ?? null,
     value,
     source,
-    evidence,
-    record
+    evidence
   };
 }
 

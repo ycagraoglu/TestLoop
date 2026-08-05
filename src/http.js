@@ -1,5 +1,9 @@
-export async function executeHttp(request, { timeoutMs = 30000 } = {}) {
+import { assertAllowedUrl } from './security-policy.js';
+
+export async function executeHttp(request, { timeoutMs = 30000, securityPolicy = null, purpose = 'request' } = {}) {
   if (!request?.url || !request?.method) throw new Error('Request requires url and method.');
+  if (securityPolicy) assertAllowedUrl(request.url, securityPolicy, purpose);
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const startedAt = Date.now();
@@ -8,9 +12,7 @@ export async function executeHttp(request, { timeoutMs = 30000 } = {}) {
     let body;
     if (request.body !== undefined) {
       body = typeof request.body === 'string' ? request.body : JSON.stringify(request.body);
-      if (!Object.keys(headers).some(x => x.toLowerCase() === 'content-type')) {
-        headers['content-type'] = 'application/json';
-      }
+      if (!Object.keys(headers).some(x => x.toLowerCase() === 'content-type')) headers['content-type'] = 'application/json';
     }
     const response = await fetch(request.url, {
       method: request.method,
@@ -19,7 +21,12 @@ export async function executeHttp(request, { timeoutMs = 30000 } = {}) {
       signal: controller.signal,
       redirect: 'manual'
     });
-    const text = await response.text();
+    const maxBytes = securityPolicy?.maxResponseBytes ?? 2_000_000;
+    const contentLength = Number(response.headers.get('content-length') ?? 0);
+    if (contentLength > maxBytes) throw new Error(`HTTP response exceeds ${maxBytes} bytes.`);
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length > maxBytes) throw new Error(`HTTP response exceeds ${maxBytes} bytes.`);
+    const text = buffer.toString('utf8');
     let parsedBody = text;
     try { parsedBody = text ? JSON.parse(text) : null; } catch { /* preserve text */ }
     return {

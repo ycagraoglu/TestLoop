@@ -1,22 +1,35 @@
 import { spawn } from 'node:child_process';
+import { assertAllowedCommand, buildRestrictedEnvironment, createSecurityPolicy } from './security-policy.js';
 
 const ALLOWED_ROLES = new Set(['diagnose', 'fix', 'review']);
 
-export async function runRole(role, input, config = {}) {
+export async function runRole(role, input, config = {}, securityPolicy = null) {
   if (!ALLOWED_ROLES.has(role)) throw new Error(`Unsupported role: ${role}`);
   const command = config[role]?.command;
   if (!command) return { status: 'UNAVAILABLE', role, reason: `No ${role} command configured.` };
 
-  const [executable, ...args] = Array.isArray(command) ? command : shellSplit(command);
+  const policy = securityPolicy ?? createSecurityPolicy(config.security);
+  const normalizedCommand = Array.isArray(command) ? command : null;
+  assertAllowedCommand(normalizedCommand, policy);
+  const [executable, ...args] = normalizedCommand;
   const child = spawn(executable, args, {
     cwd: config.cwd,
-    env: { ...process.env, ...(config.env ?? {}), TESTLOOP_ROLE: role },
-    stdio: ['pipe', 'pipe', 'pipe']
+    env: buildRestrictedEnvironment(policy, { ...(config.env ?? {}), TESTLOOP_ROLE: role }),
+    stdio: ['pipe', 'pipe', 'pipe'],
+    shell: false,
+    windowsHide: true
   });
   let stdout = '';
   let stderr = '';
-  child.stdout.on('data', chunk => { stdout += chunk; });
-  child.stderr.on('data', chunk => { stderr += chunk; });
+  const maxOutputBytes = policy.maxRoleOutputBytes;
+  child.stdout.on('data', chunk => {
+    stdout += chunk;
+    if (Buffer.byteLength(stdout) > maxOutputBytes) child.kill('SIGKILL');
+  });
+  child.stderr.on('data', chunk => {
+    stderr += chunk;
+    if (Buffer.byteLength(stderr) > maxOutputBytes) child.kill('SIGKILL');
+  });
   child.stdin.end(`${JSON.stringify({ role, input })}\n`);
 
   const code = await new Promise((resolve, reject) => {
@@ -28,6 +41,9 @@ export async function runRole(role, input, config = {}) {
     child.once('exit', value => { clearTimeout(timer); resolve(value); });
   });
 
+  if (Buffer.byteLength(stdout) > maxOutputBytes || Buffer.byteLength(stderr) > maxOutputBytes) {
+    throw new Error(`${role} role exceeded output limit.`);
+  }
   if (code !== 0) throw new Error(`${role} role failed with code ${code}: ${stderr.trim()}`);
   const result = JSON.parse(stdout);
   validateRoleResult(role, result);
@@ -42,8 +58,4 @@ export function validateRoleResult(role, result) {
   if (role === 'fix' && !['SUCCESS', 'FAILURE'].includes(result.status)) throw new Error(`Invalid fix status: ${result.status}`);
   if (role === 'review' && !['APPROVED', 'CHANGES_REQUESTED', 'REJECTED'].includes(result.status)) throw new Error(`Invalid review status: ${result.status}`);
   return true;
-}
-
-function shellSplit(value) {
-  return String(value).match(/(?:[^\s"]+|"[^"]*")+/g)?.map(item => item.replace(/^"|"$/g, '')) ?? [];
 }
