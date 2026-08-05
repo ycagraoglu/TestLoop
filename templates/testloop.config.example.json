@@ -5,15 +5,28 @@
   "baseUrl": "http://127.0.0.1:5099",
   "timeoutMs": 30000,
   "stopOnFailure": true,
+  "security": {
+    "allowPrivateNetwork": true,
+    "allowedHosts": ["127.0.0.1"],
+    "allowedCommands": ["node"],
+    "inheritedEnv": ["PATH", "HOME", "USERPROFILE", "TMP", "TEMP"],
+    "maxResponseBytes": 2000000,
+    "maxRoleOutputBytes": 1000000
+  },
   "auth": {
     "type": "login",
     "url": "http://127.0.0.1:5099/api/auth/token",
     "method": "POST",
     "body": {
-      "email": "test@example.invalid",
-      "password": "replace-me"
+      "email": { "$env": "TESTLOOP_LOGIN_EMAIL" },
+      "password": { "$env": "TESTLOOP_LOGIN_PASSWORD" }
     },
     "tokenPath": "data.accessToken"
+  },
+  "roles": {
+    "diagnose": { "command": ["node", "./agents/diagnose-adapter.js"] },
+    "fix": { "command": ["node", "./agents/fix-adapter.js"] },
+    "review": { "command": ["node", "./agents/review-adapter.js"] }
   },
   "scenarios": [
     {
