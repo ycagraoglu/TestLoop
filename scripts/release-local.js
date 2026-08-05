@@ -114,9 +114,13 @@ async function rollbackLocalRelease(releaseVersion) {
 }
 
 async function run(command, commandArgs, options = {}) {
-  const executable = process.platform === 'win32' && command === 'npm' ? 'npm.cmd' : command;
+  const invocation = resolveInvocation(command, commandArgs);
   try {
-    const result = await execFileAsync(executable, commandArgs, { cwd: process.cwd(), maxBuffer: 10_000_000 });
+    const result = await execFileAsync(invocation.executable, invocation.args, {
+      cwd: process.cwd(),
+      maxBuffer: 10_000_000,
+      windowsHide: true
+    });
     if (result.stdout) process.stdout.write(result.stdout);
     if (result.stderr) process.stderr.write(result.stderr);
     return result.stdout ?? '';
@@ -125,4 +129,11 @@ async function run(command, commandArgs, options = {}) {
     const details = [error.stdout, error.stderr].filter(Boolean).join('\n');
     throw new Error(`${command} ${commandArgs.join(' ')} failed.${details ? `\n${details}` : ''}`);
   }
+}
+
+function resolveInvocation(command, commandArgs) {
+  if (command !== 'npm') return { executable: command, args: commandArgs };
+  const npmCli = process.env.npm_execpath;
+  if (!npmCli) throw new Error('Run the release through npm scripts so npm_execpath is available.');
+  return { executable: process.execPath, args: [npmCli, ...commandArgs] };
 }
