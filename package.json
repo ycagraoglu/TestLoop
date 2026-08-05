@@ -1,12 +1,12 @@
 {
   "name": "testloop",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Deterministic runner for agent-driven ASP.NET Core API verification.",
   "type": "module",
   "bin": { "testloop": "./bin/testloop.js" },
   "scripts": {
     "test": "node --test",
-    "check": "node --check bin/testloop.js && node --check src/discovery.js && node --check src/openapi.js && node --check src/http.js && node --check src/source-analyzer.js && node --check src/workflow.js"
+    "check": "node --check bin/testloop.js && node --check src/discovery.js && node --check src/openapi.js && node --check src/http.js && node --check src/source-analyzer.js && node --check src/workflow.js && node --check src/fixture-planner.js"
   },
   "engines": { "node": ">=20" },
   "license": "Apache-2.0"
