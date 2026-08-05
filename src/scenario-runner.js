@@ -15,7 +15,7 @@ export async function runScenario(scenario, context) {
   if (fixturePlan.status !== 'READY') return blockedScenario(scenario, fixturePlan);
 
   const request = createRequest(scenario, context, fixturePlan.payload);
-  const response = await execute(request, scenario, context, 'execution');
+  const response = await executeRequest(request, scenario, context, true);
   const expectedStatuses = expectedStatusesFor(scenario);
   const classification = classifyExecution({
     expectedStatuses,
@@ -74,14 +74,13 @@ function createRequest(scenario, context, body) {
   };
 }
 
-async function execute(request, scenario, context, artifactSuffix) {
+async function executeRequest(request, scenario, context, persistRequest) {
   const response = await executeHttp(request, {
     timeoutMs: scenario.timeoutMs ?? context.config.timeoutMs ?? 30000
   });
-  await context.store.write(`${scenario.id}.${artifactSuffix}.json`, {
-    request: artifactSuffix === 'execution' ? redactRequest(request) : undefined,
-    response
-  });
+  const name = persistRequest ? `${scenario.id}.execution.json` : `${scenario.id}.retest.json`;
+  const artifact = persistRequest ? { request: redactRequest(request), response } : response;
+  await context.store.write(name, artifact);
   return response;
 }
 
@@ -119,7 +118,7 @@ async function handleFailure({ scenario, request, response, fixturePlan, classif
   const review = await runAndStoreRole('review', scenario, { scenario, diagnosis, fix }, context);
   if (review.status !== 'APPROVED') return { id: scenario.id, status: 'ESCALATED', diagnosis, fix, review };
 
-  const retest = await execute(request, scenario, context, 'retest');
+  const retest = await executeRequest(request, scenario, context, false);
   return expectedStatuses.includes(retest.status)
     ? { id: scenario.id, status: 'PASS', classification: 'PASS_AFTER_FIX', response: retest, diagnosis, fix, review }
     : { id: scenario.id, status: 'FAIL', classification: 'RETEST_FAILED', response: retest, diagnosis, fix, review };
