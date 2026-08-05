@@ -36,6 +36,7 @@ test('runs login, verified fixture acquisition, request execution, and artifact 
       root,
       runId: 'e2e-run',
       baseUrl,
+      security: { allowPrivateNetwork: true, allowedHosts: ['127.0.0.1'] },
       auth: { type: 'login', url: `${baseUrl}/login`, body: { email: 'a', password: 'b' }, tokenPath: 'data.accessToken' },
       scenarios: [{
         id: 'create-product', method: 'POST', path: '/products', expectedStatuses: [201],
@@ -77,7 +78,9 @@ test('does not call endpoint when persisted dependency cannot be verified', asyn
   }, async baseUrl => {
     const root = await mkdtemp(path.join(tmpdir(), 'testloop-blocked-'));
     const result = await runVerification({
-      root, baseUrl,
+      root,
+      baseUrl,
+      security: { allowPrivateNetwork: true, allowedHosts: ['127.0.0.1'] },
       scenarios: [{
         id: 'create-product', method: 'POST', path: '/products',
         requestModel: {
