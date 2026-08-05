@@ -14,13 +14,7 @@ export async function runVerification(config, dependencies = {}) {
   await store.write('auth.json', redactAuth(auth));
   if (auth.status === 'BLOCKED') return completeRun(store, 'BLOCKED', [], [auth.reason]);
 
-  const context = {
-    config,
-    auth,
-    outputs: {},
-    store,
-    dependencies
-  };
+  const context = { config, auth, outputs: {}, store };
   const results = [];
   const blockers = [];
 
