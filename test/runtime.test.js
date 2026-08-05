@@ -18,7 +18,7 @@ test('persists and reads structured run artifacts', async () => {
   const store = await new ArtifactStore(root, 'run-1').initialize({ mode: 'standard' });
   await store.write('evidence.json', { verified: true });
   assert.deepEqual(await store.read('evidence.json'), { verified: true });
-  assert.throws(() => store.write('../escape.json', {}), /safe/);
+  await assert.rejects(store.write('../escape.json', {}), /safe/);
 });
 
 test('groups endpoint operations into feature lifecycles', () => {
