@@ -2,19 +2,21 @@ import { ArtifactStore } from './artifact-store.js';
 import { resolveAuthContext } from './auth.js';
 import { redactAuth } from './redaction.js';
 import { runScenario } from './scenario-runner.js';
+import { createSecurityPolicy } from './security-policy.js';
 import { validateVerificationConfig } from './verification-config.js';
 
 export async function runVerification(config, dependencies = {}) {
   validateVerificationConfig(config);
 
+  const securityPolicy = createSecurityPolicy(config.security);
   const store = dependencies.store ?? new ArtifactStore(config.root ?? process.cwd(), config.runId);
   await store.initialize({ mode: config.mode ?? 'standard', baseUrl: config.baseUrl });
 
-  const auth = await resolveAuthContext(config.auth ?? { type: 'none' });
+  const auth = await resolveAuthContext(config.auth ?? { type: 'none' }, securityPolicy);
   await store.write('auth.json', redactAuth(auth));
   if (auth.status === 'BLOCKED') return completeRun(store, 'BLOCKED', [], [auth.reason]);
 
-  const context = { config, auth, outputs: {}, store };
+  const context = { config, auth, outputs: {}, store, securityPolicy };
   const results = [];
   const blockers = [];
 
