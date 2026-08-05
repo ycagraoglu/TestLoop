@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://testloop.dev/schemas/workflow-result.schema.json",
+  "title": "TestLoop Workflow Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "runId",
+    "taskId",
+    "role",
+    "state",
+    "status",
+    "summary",
+    "evidence",
+    "artifacts",
+    "blockingReasons"
+  ],
+  "properties": {
+    "runId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "taskId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "coordinator",
+        "test-analyst",
+        "failure-diagnostician",
+        "bugfix-agent",
+        "review-agent"
+      ]
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "DISCOVER",
+        "PLAN",
+        "RESOLVE_FIXTURES",
+        "PREPARE_AUTH",
+        "GENERATE_REQUEST",
+        "EXECUTE",
+        "VERIFY",
+        "DIAGNOSE",
+        "FIX",
+        "REVIEW",
+        "RETEST",
+        "COMPLETE",
+        "REPORT",
+        "ESCALATED"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "SUCCESS",
+        "PASS",
+        "FAIL",
+        "BLOCKED",
+        "EXPECTED_REJECTION",
+        "SPEC_MISMATCH",
+        "APPLICATION_BUG",
+        "INCONCLUSIVE",
+        "APPROVED",
+        "CHANGES_REQUESTED",
+        "ESCALATED"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "blockingReasons": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "nextRecommendedState": {
+      "type": ["string", "null"]
+    },
+    "confidence": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 1
+    }
+  }
+}
