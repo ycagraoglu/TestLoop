@@ -10,18 +10,22 @@ permissions:
   contents: read
 
 jobs:
-  runner:
-    runs-on: ubuntu-latest
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: ['20', '22']
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: ${{ matrix.node }}
+          cache: npm
       - name: Install
         run: npm ci --ignore-scripts
-      - name: Syntax check
-        run: npm run check
-      - name: Unit tests
-        run: npm test
+      - name: Verify source, tests, and package
+        run: npm run verify
