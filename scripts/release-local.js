@@ -4,41 +4,61 @@ import process from 'node:process';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
+const VERSION_FILES = [
+  'package.json',
+  'package-lock.json',
+  '.claude-plugin/plugin.json',
+  '.claude-plugin/marketplace.json',
+  'CHANGELOG.md'
+];
 const args = process.argv.slice(2);
 const version = args.find(arg => !arg.startsWith('--'));
 const dryRun = args.includes('--dry-run');
+const skipGitHubRelease = args.includes('--skip-github-release');
 const notesIndex = args.indexOf('--notes');
 const notes = notesIndex >= 0 ? args[notesIndex + 1] : 'Maintenance release.';
 
 if (!version || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
-  throw new Error('Usage: npm run release -- <version> [--notes "..."] [--dry-run]');
+  throw new Error('Usage: npm run release -- <version> [--notes "..."] [--dry-run] [--skip-github-release]');
 }
 
 await ensureCleanMainBranch();
 await run('npm', ['whoami']);
+if (!dryRun && !skipGitHubRelease) await ensureGitHubCli();
+
 await updateVersionFiles(version, notes);
-await run('npm', ['run', 'verify']);
+try {
+  await run('npm', ['run', 'verify']);
+} catch (error) {
+  await restoreVersionFiles();
+  throw error;
+}
 
 if (dryRun) {
-  console.log(`Dry run complete for v${version}. Version files were updated locally but no commit, tag, publish, or push was performed.`);
+  await restoreVersionFiles();
+  console.log(`Dry run complete for v${version}. No files, commits, tags, packages, or remote refs were changed.`);
   process.exit(0);
 }
 
-await run('git', ['add', 'package.json', 'package-lock.json', '.claude-plugin/plugin.json', '.claude-plugin/marketplace.json', 'CHANGELOG.md']);
+await run('git', ['add', ...VERSION_FILES]);
 await run('git', ['commit', '-m', `Release v${version}`]);
 await run('git', ['tag', '-a', `v${version}`, '-m', `TestLoop v${version}`]);
 
 try {
-  await run('npm', ['publish', '--access', 'public', '--provenance']);
+  await run('npm', ['publish', '--access', 'public']);
 } catch (error) {
-  await run('git', ['tag', '-d', `v${version}`], { allowFailure: true });
-  await run('git', ['reset', '--hard', 'HEAD~1'], { allowFailure: true });
+  await rollbackLocalRelease(version);
   throw error;
 }
 
 await run('git', ['push', 'origin', 'main']);
 await run('git', ['push', 'origin', `v${version}`]);
-console.log(`Published and pushed TestLoop v${version}.`);
+
+if (!skipGitHubRelease) {
+  await run('gh', ['release', 'create', `v${version}`, '--title', `TestLoop v${version}`, '--notes', notes]);
+}
+
+console.log(`Published TestLoop v${version} to npm and pushed the release to GitHub.`);
 
 async function ensureCleanMainBranch() {
   const branch = (await run('git', ['branch', '--show-current'])).trim();
@@ -49,6 +69,11 @@ async function ensureCleanMainBranch() {
   const local = (await run('git', ['rev-parse', 'main'])).trim();
   const remote = (await run('git', ['rev-parse', 'origin/main'])).trim();
   if (local !== remote) throw new Error('Local main must exactly match origin/main before releasing.');
+}
+
+async function ensureGitHubCli() {
+  await run('gh', ['--version']);
+  await run('gh', ['auth', 'status']);
 }
 
 async function updateVersionFiles(nextVersion, releaseNotes) {
@@ -77,6 +102,15 @@ async function updateVersionFiles(nextVersion, releaseNotes) {
 async function updateJson(file, transform) {
   const value = JSON.parse(await readFile(file, 'utf8'));
   await writeFile(file, `${JSON.stringify(transform(value), null, 2)}\n`, 'utf8');
+}
+
+async function restoreVersionFiles() {
+  await run('git', ['checkout', '--', ...VERSION_FILES], { allowFailure: true });
+}
+
+async function rollbackLocalRelease(releaseVersion) {
+  await run('git', ['tag', '-d', `v${releaseVersion}`], { allowFailure: true });
+  await run('git', ['reset', '--hard', 'HEAD~1'], { allowFailure: true });
 }
 
 async function run(command, commandArgs, options = {}) {
