@@ -1,0 +1,8 @@
+{
+  "name": "testloop",
+  "version": "0.4.0",
+  "description": "Evidence-driven ASP.NET Core API testing, diagnosis, repair, review, and retesting.",
+  "author": {
+    "name": "TestLoop contributors"
+  }
+}
