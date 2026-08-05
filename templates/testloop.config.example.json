@@ -1,0 +1,59 @@
+{
+  "root": ".",
+  "runId": "local-products",
+  "mode": "standard",
+  "baseUrl": "http://127.0.0.1:5099",
+  "timeoutMs": 30000,
+  "stopOnFailure": true,
+  "auth": {
+    "type": "login",
+    "url": "http://127.0.0.1:5099/api/auth/token",
+    "method": "POST",
+    "body": {
+      "email": "test@example.invalid",
+      "password": "replace-me"
+    },
+    "tokenPath": "data.accessToken"
+  },
+  "scenarios": [
+    {
+      "id": "create-product",
+      "method": "POST",
+      "path": "/api/products",
+      "expectedStatuses": [200, 201],
+      "requestModel": {
+        "name": "CreateProductRequest",
+        "properties": [
+          { "name": "Name", "type": "string", "required": true },
+          { "name": "Price", "type": "decimal", "required": true },
+          { "name": "CategoryId", "type": "Guid", "required": true }
+        ],
+        "dependencies": [
+          { "property": "CategoryId", "entity": "Category" }
+        ]
+      },
+      "fixtureSources": {
+        "Category": [
+          {
+            "type": "http-list",
+            "url": "http://127.0.0.1:5099/api/categories",
+            "itemsPath": "data",
+            "idProperty": "id",
+            "predicates": [
+              { "property": "isActive", "operator": "truthy" }
+            ]
+          }
+        ]
+      },
+      "capture": {
+        "productId": "data.id"
+      }
+    },
+    {
+      "id": "get-product",
+      "method": "GET",
+      "path": "/api/products/{create-product.productId}",
+      "expectedStatuses": [200]
+    }
+  ]
+}

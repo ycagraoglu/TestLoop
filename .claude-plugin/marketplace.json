@@ -1,0 +1,14 @@
+{
+  "name": "testloop",
+  "owner": {
+    "name": "TestLoop contributors"
+  },
+  "plugins": [
+    {
+      "name": "testloop",
+      "source": "./",
+      "description": "Evidence-driven ASP.NET Core API verification and repair workflow.",
+      "version": "0.4.0"
+    }
+  ]
+}

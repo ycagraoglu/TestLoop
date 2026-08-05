@@ -1,0 +1,4 @@
+node_modules/
+.testloop/
+*.log
+.DS_Store
