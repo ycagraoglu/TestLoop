@@ -62,6 +62,17 @@ test('rejects random reusable fixtures', () => {
   assert.equal(plan.status, 'BLOCKED');
 });
 
+test('does not trust a raw supplied foreign key without evidence', () => {
+  const plan = buildFixturePlan({
+    requestModel,
+    validator,
+    supplied: { CategoryId: '33333333-3333-3333-3333-333333333333' }
+  });
+  assert.equal(plan.status, 'BLOCKED');
+  assert.equal(Object.hasOwn(plan.payload, 'CategoryId'), false);
+  assert.equal(plan.blocked[0].suppliedValueIgnored, true);
+});
+
 test('selects a stable candidate that satisfies business predicates', () => {
   const candidate = selectFixtureCandidate([
     { id: 'b', isActive: true, tenantId: 't1' },
