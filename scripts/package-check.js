@@ -4,8 +4,10 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
-const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-const { stdout } = await execFileAsync(npm, ['pack', '--json', '--ignore-scripts'], {
+const npmCli = process.env.npm_execpath;
+if (!npmCli) throw new Error('npm_execpath is unavailable. Run this check through npm run pack:check.');
+
+const { stdout } = await execFileAsync(process.execPath, [npmCli, 'pack', '--json', '--ignore-scripts'], {
   cwd: process.cwd(),
   maxBuffer: 5_000_000
 });
