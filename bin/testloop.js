@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { discoverDotnetProjects, ensureDirectoryExists } from '../src/discovery.js';
-import { listOperations, loadOpenApi } from '../src/openapi.js';
 import { executeHttp } from '../src/http.js';
+import { listOperations, loadOpenApi } from '../src/openapi.js';
+import { analyzeAspNetSource } from '../src/source-analyzer.js';
+import { createWorkflowState, transitionWorkflow } from '../src/workflow.js';
 
 const [command, ...args] = process.argv.slice(2);
 
@@ -11,6 +13,12 @@ try {
       const root = args[0] ?? process.cwd();
       await ensureDirectoryExists(root);
       console.log(JSON.stringify(await discoverDotnetProjects(root), null, 2));
+      break;
+    }
+    case 'analyze': {
+      const root = args[0] ?? process.cwd();
+      await ensureDirectoryExists(root);
+      console.log(JSON.stringify(await analyzeAspNetSource(root), null, 2));
       break;
     }
     case 'openapi': {
@@ -24,6 +32,15 @@ try {
       const url = required(args[1], 'URL');
       const body = args[2] ? JSON.parse(args[2]) : undefined;
       console.log(JSON.stringify(await executeHttp({ method, url, body }), null, 2));
+      break;
+    }
+    case 'workflow': {
+      const runId = required(args[0], 'Run ID');
+      const target = required(args[1], 'Target');
+      const outcomes = args.slice(2);
+      let workflow = createWorkflowState({ runId, target });
+      for (const outcome of outcomes) workflow = transitionWorkflow(workflow, outcome);
+      console.log(JSON.stringify(workflow, null, 2));
       break;
     }
     case 'help':
@@ -44,5 +61,5 @@ function required(value, name) {
 }
 
 function printHelp() {
-  console.log(`TestLoop deterministic runner\n\nCommands:\n  testloop discover [root]\n  testloop openapi <url>\n  testloop request <method> <url> [json-body]\n`);
+  console.log(`TestLoop deterministic runner\n\nCommands:\n  testloop discover [root]\n  testloop analyze [root]\n  testloop openapi <url>\n  testloop request <method> <url> [json-body]\n  testloop workflow <run-id> <target> [outcomes...]\n`);
 }
