@@ -18,12 +18,6 @@ export function buildFixturePlan({ requestModel, validator = null, supplied = {}
   const blocked = [];
 
   for (const property of requestModel.properties) {
-    if (Object.hasOwn(supplied, property.name)) {
-      payload[property.name] = supplied[property.name];
-      resolutions.push(resolution(property.name, 'supplied', true));
-      continue;
-    }
-
     const dependency = dependencies.get(property.name);
     if (dependency) {
       const reusable = reusableFixtures[property.name] ?? reusableFixtures[dependency.entity];
@@ -43,9 +37,16 @@ export function buildFixturePlan({ requestModel, validator = null, supplied = {}
           reason: dependency.entity
             ? `Verified ${dependency.entity} fixture is required.`
             : 'Persisted dependency could not be mapped to an entity.',
+          suppliedValueIgnored: Object.hasOwn(supplied, property.name),
           allowedSources: ['workflow-output', 'seed', 'safe-read-endpoint', 'test-database', 'producer-endpoint']
         });
       }
+      continue;
+    }
+
+    if (Object.hasOwn(supplied, property.name)) {
+      payload[property.name] = supplied[property.name];
+      resolutions.push(resolution(property.name, 'supplied', true));
       continue;
     }
 
