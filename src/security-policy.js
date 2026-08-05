@@ -27,11 +27,11 @@ export function assertAllowedUrl(rawUrl, policy, purpose = 'request') {
   try { url = new URL(rawUrl); } catch { throw new Error(`Invalid ${purpose} URL.`); }
   if (!['http:', 'https:'].includes(url.protocol)) throw new Error(`${purpose} URL must use http or https.`);
   if (url.username || url.password) throw new Error(`${purpose} URL must not contain credentials.`);
-  if (policy.allowedHosts.size > 0 && !policy.allowedHosts.has(url.hostname)) {
-    throw new Error(`${purpose} host is not allowlisted: ${url.hostname}`);
-  }
   if (!policy.allowPrivateNetwork && isPrivateHost(url.hostname)) {
     throw new Error(`${purpose} URL points to a private or loopback network. Explicitly allow it in security.allowPrivateNetwork.`);
+  }
+  if (policy.allowedHosts.size > 0 && !policy.allowedHosts.has(url.hostname)) {
+    throw new Error(`${purpose} host is not allowlisted: ${url.hostname}`);
   }
   return url;
 }
