@@ -2,64 +2,81 @@
 
 **Test it. Fix it. Verify it.**
 
-TestLoop is an agent-native verification workflow for ASP.NET Core Web APIs. It discovers endpoints, resolves valid fixtures, executes real HTTP requests, classifies failures, delegates confirmed defects to independent diagnosis/fix/review roles, and retests only after approval.
+TestLoop is an agent-native verification workflow and deterministic CLI for controller-based ASP.NET Core Web APIs. It discovers endpoints, resolves evidence-backed fixtures, executes real HTTP requests, classifies failures, repairs confirmed defects through independent roles, and retests only after approval.
 
-TestLoop includes an [Agent Skills](https://agentskills.io/) compatible skill at `skills/testloop/SKILL.md` and a deterministic CLI that performs the underlying project analysis and test execution.
+The repository contains one portable Agent Skills-compatible core at `skills/testloop/SKILL.md`. Claude Code, Codex, Copilot-compatible plugin hosts, and instruction-file-based agents reuse that same skill instead of maintaining separate testing logic.
 
 ## Trust rule
 
 An endpoint is never marked as failed until authentication, persisted dependencies, foreign keys, validation constraints, tenant context, and relevant business preconditions are verified. Unresolved preconditions are `BLOCKED`, never fake failures.
 
-## Implemented MVP
+## Plugin installation
 
-- `.sln` and `.csproj` discovery
-- ASP.NET Core controller, route, action, DTO, authorization, FluentValidation, entity, and EF Core FK analysis
-- OpenAPI operation inventory and feature-oriented test planning
-- deterministic payload generation
-- verified fixture acquisition from static evidence, workflow outputs, and safe HTTP list endpoints
-- JWT bearer and login-based authentication contexts
-- real HTTP execution with structured evidence
-- persisted `.testloop/runs/<run-id>` artifacts
-- safe `dotnet build` and Development/Test API process lifecycle
-- gated workflow state, classification, retry budgets, and agent-call budgets
-- external diagnosis, bugfix, and independent review role adapters
-- retest only after review returns `APPROVED`
-- Agent Skills compatible metadata and instructions
-- Claude-style plugin metadata, role prompts, schemas, and configuration template
+Node.js 20 or newer must be available on `PATH`. The plugin repository already contains `bin/testloop.js` and `src/`, so npm publication is not required for plugin-based use.
 
-## Install and verify
+### Claude Code
+
+Run these as two separate commands inside Claude Code:
+
+```text
+/plugin marketplace add ycagraoglu/TestLoop
+/plugin install testloop@testloop
+```
+
+### Codex CLI and Codex desktop
 
 ```bash
+codex plugin marketplace add ycagraoglu/TestLoop
+codex plugin add testloop@testloop
+```
+
+Restart Codex after installation. The Codex manifest is stored at `.codex-plugin/plugin.json` and points to the shared `skills/` directory.
+
+### GitHub Copilot CLI
+
+```bash
+copilot plugin marketplace add ycagraoglu/TestLoop
+copilot plugin install testloop@testloop
+```
+
+Plugin command support depends on the installed Copilot CLI version. Agents that do not support plugin installation can still consume `skills/testloop/SKILL.md` or the repository-level `AGENTS.md` fallback.
+
+## Local development installation
+
+```bash
+git clone https://github.com/ycagraoglu/TestLoop.git
+cd TestLoop
 npm install
 npm run verify
 npm link
 ```
 
-Node.js 20 or newer is required. The runner has no runtime npm dependencies. Verification is intentionally local and does not require GitHub Actions.
+After `npm link`, verify the global development command:
 
-`npm run verify` performs JavaScript syntax checks, Agent Skills specification checks, automated tests, and npm package-content verification. The skill check can also be run independently:
+```bash
+testloop --help
+```
+
+## Verification
+
+```bash
+npm run verify
+```
+
+This runs:
+
+- JavaScript syntax checking;
+- Agent Skills specification validation;
+- Claude marketplace and Codex plugin manifest validation;
+- automated tests;
+- npm package-content verification.
+
+Individual metadata checks:
 
 ```bash
 npm run skill:check
+npm run plugin:check
 ```
-
-## Agent Skill
-
-The portable skill is located at:
-
-```text
-skills/testloop/SKILL.md
-```
-
-Its frontmatter uses the standard `name`, `description`, `license`, `compatibility`, and `metadata` fields. The skill documents the `smoke`, `standard`, and `deep` modes and instructs compatible agents to delegate deterministic operations to the TestLoop CLI.
-
-Clients that use the cross-client `.agents/skills/` discovery convention can install or copy the `skills/testloop` directory into:
-
-```text
-.agents/skills/testloop/
-```
-
-The Agent Skills specification defines the contents of a skill directory; installation and discovery locations may vary by client.
 
 ## Commands
 
@@ -73,49 +90,45 @@ testloop serve ./src/MyApi/MyApi.csproj http://127.0.0.1:5099 Development
 testloop run ./testloop.config.json
 ```
 
-Copy `templates/testloop.config.example.json` and adapt it to the target API. Run evidence is written under `.testloop/runs`.
-
-## Local release workflow
-
-GitHub Actions is not required for verification, packaging, tagging, npm publication, or GitHub Release creation.
-
-Before the first publication, authenticate the local machine:
+When no global command is installed, run the bundled CLI from a TestLoop checkout or plugin root:
 
 ```bash
-npm login
-gh auth login
+node ./bin/testloop.js discover .
+node ./bin/testloop.js analyze .
+node ./bin/testloop.js run ./testloop.config.json
 ```
 
-Run a release dry-run from a clean, up-to-date local `main` branch:
+Copy `templates/testloop.config.example.json` into the target API repository and adapt it. Run evidence is written under `.testloop/runs/<run-id>`.
 
-```bash
-npm run release:check -- 0.5.1 --notes "Describe the release"
+## Shared core and adapters
+
+```text
+skills/testloop/SKILL.md       shared Agent Skill
+bin/ and src/                  deterministic TestLoop CLI
+.claude-plugin/                Claude marketplace adapter
+.codex-plugin/plugin.json      Codex plugin adapter
+AGENTS.md                      portable instruction fallback
+agents/                        diagnosis, fix, and review role contracts
+schemas/ and templates/        machine-readable contracts and configuration
 ```
 
-The dry-run restores all changed version files after validation.
+The platform adapters package and discover the shared skill; they do not duplicate TestLoop's workflow rules.
 
-Publish the release:
+## Implemented MVP
 
-```bash
-npm run release -- 0.5.1 --notes "Describe the release"
-```
-
-The release command performs these checks and operations in order:
-
-1. Requires a clean local `main` branch that exactly matches `origin/main`.
-2. Verifies npm and GitHub CLI authentication.
-3. Updates `package.json`, `package-lock.json`, Claude plugin metadata, and `CHANGELOG.md`.
-4. Runs syntax checks, Agent Skills validation, tests, and npm package-content verification.
-5. Creates the release commit and annotated Git tag.
-6. Publishes the public npm package from the local machine.
-7. Pushes the release commit and tag to GitHub.
-8. Creates the GitHub Release through `gh release create`.
-
-If npm publication fails, the local release commit and tag are rolled back. To publish without creating a GitHub Release, pass `--skip-github-release`. No GitHub repository secret or paid Actions runner is needed.
+- `.sln` and `.csproj` discovery;
+- ASP.NET Core controllers, routes, actions, DTOs, authorization, validators, entities, and EF Core FK analysis;
+- OpenAPI operation inventory and feature-oriented planning;
+- deterministic payload generation and verified fixture acquisition;
+- JWT bearer and login-based authentication contexts;
+- real HTTP execution with structured evidence;
+- safe Development/Test build and process lifecycle;
+- gated classification, repair, independent review, and retesting;
+- production refusal and security-preserving repair rules.
 
 ## Agent integration
 
-TestLoop does deterministic work itself. Expensive agent roles are called only for unexpected results that survive fixture and authentication checks. Role commands receive one JSON object on stdin and must return one JSON object on stdout.
+Expensive agent roles are called only for unexpected results that survive fixture and authentication checks. Role commands receive one JSON object on stdin and return one JSON object on stdout.
 
 ```json
 {
@@ -127,20 +140,26 @@ TestLoop does deterministic work itself. Expensive agent roles are called only f
 }
 ```
 
-Role contracts are documented in `agents/`. The fix and review roles must not be the same session.
+The fix and review roles must not be the same session.
 
 ## Safety
 
 - Production process startup is refused.
 - Persisted IDs are never randomly generated.
 - Supplied foreign keys still require verification evidence.
-- Authorization, validation, tenant isolation, and public contracts may not be weakened to make tests pass.
-- Destructive and external-side-effect scenarios must be explicitly included by the user configuration.
-- Missing agent commands produce an unavailable/escalated result rather than pretending a fix occurred.
+- Authorization, validation, tenant isolation, ownership, and public contracts may not be weakened to make tests pass.
+- Destructive or external-side-effect scenarios must be explicitly configured.
+- Missing agent commands produce an unavailable or escalated result instead of pretending a fix occurred.
 
-## Scope
+## Local release workflow
 
-The MVP targets controller-based ASP.NET Core APIs, OpenAPI, EF Core, FluentValidation/DataAnnotations, JWT authentication, and isolated Development/Test environments. Complex dynamic C# constructs may require explicit configuration because source analysis is intentionally dependency-free and conservative.
+Run a dry-run from a clean `main` branch:
+
+```bash
+npm run release:check -- 0.5.1 --notes "Describe the release"
+```
+
+The release script keeps package, lockfile, shared skill, Claude plugin, Codex plugin, marketplace, and changelog versions synchronized. GitHub Actions are intentionally not required.
 
 ## License
 
