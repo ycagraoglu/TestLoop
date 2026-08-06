@@ -18,6 +18,11 @@ const required = [
   'src/orchestrator.js',
   'skills/testloop/SKILL.md',
   'scripts/validate-skill.js',
+  'scripts/validate-plugins.js',
+  '.claude-plugin/plugin.json',
+  '.claude-plugin/marketplace.json',
+  '.codex-plugin/plugin.json',
+  'AGENTS.md',
   'schemas/testloop-config.schema.json',
   'README.md',
   'LICENSE'

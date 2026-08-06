@@ -15,6 +15,8 @@
     "schemas",
     "templates",
     ".claude-plugin",
+    ".codex-plugin",
+    "AGENTS.md",
     "README.md",
     "LICENSE",
     "CHANGELOG.md"
@@ -23,11 +25,12 @@
     "test": "node --test",
     "check": "node scripts/check.js",
     "skill:check": "node scripts/validate-skill.js",
-    "verify": "npm run check && npm run skill:check && npm test && npm run pack:check",
+    "plugin:check": "node scripts/validate-plugins.js",
+    "verify": "npm run check && npm run skill:check && npm run plugin:check && npm test && npm run pack:check",
     "pack:check": "node scripts/package-check.js",
     "release:check": "node scripts/release-local.js --dry-run",
     "release": "node scripts/release-local.js",
-    "prepack": "npm run check && npm run skill:check && npm test"
+    "prepack": "npm run check && npm run skill:check && npm run plugin:check && npm test"
   },
   "engines": {
     "node": ">=20"
@@ -49,6 +52,8 @@
     "api-testing",
     "agents",
     "agent-skills",
+    "codex-plugin",
+    "claude-plugin",
     "openapi",
     "ef-core"
   ]
