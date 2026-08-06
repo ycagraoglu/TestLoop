@@ -1,0 +1,37 @@
+{
+  "name": "testloop",
+  "version": "0.5.0",
+  "description": "Evidence-driven ASP.NET Core API testing, diagnosis, repair, review, and retesting.",
+  "author": {
+    "name": "ycagraoglu",
+    "url": "https://github.com/ycagraoglu"
+  },
+  "homepage": "https://github.com/ycagraoglu/TestLoop",
+  "repository": "https://github.com/ycagraoglu/TestLoop",
+  "license": "Apache-2.0",
+  "keywords": [
+    "aspnetcore",
+    "api-testing",
+    "agent-skills",
+    "openapi",
+    "ef-core"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "TestLoop",
+    "shortDescription": "Evidence-driven ASP.NET Core API verification",
+    "longDescription": "Discover, analyze, plan, execute, diagnose, repair, independently review, and retest controller-based ASP.NET Core Web APIs without inventing fixtures or weakening security.",
+    "developerName": "ycagraoglu",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Instructions",
+      "Local CLI"
+    ],
+    "websiteURL": "https://github.com/ycagraoglu/TestLoop",
+    "defaultPrompt": [
+      "Use TestLoop to discover and analyze this ASP.NET Core API without changing source code.",
+      "Use TestLoop in standard mode with verified fixtures and preserve all evidence.",
+      "Review this API failure and classify it before proposing a code change."
+    ]
+  }
+}
