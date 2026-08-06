@@ -9,6 +9,7 @@ const VERSION_FILES = [
   'package-lock.json',
   '.claude-plugin/plugin.json',
   '.claude-plugin/marketplace.json',
+  'skills/testloop/SKILL.md',
   'CHANGELOG.md'
 ];
 const args = process.argv.slice(2);
@@ -88,6 +89,7 @@ async function updateVersionFiles(nextVersion, releaseNotes) {
     ...value,
     plugins: (value.plugins ?? []).map(plugin => plugin.name === 'testloop' ? { ...plugin, version: nextVersion } : plugin)
   }));
+  await updateSkillVersion(nextVersion);
 
   const changelog = await readFile('CHANGELOG.md', 'utf8');
   if (changelog.includes(`## [${nextVersion}]`)) throw new Error(`CHANGELOG already contains ${nextVersion}.`);
@@ -97,6 +99,14 @@ async function updateVersionFiles(nextVersion, releaseNotes) {
   const index = changelog.indexOf(marker);
   const updated = index >= 0 ? `${changelog.slice(0, index)}${section}${changelog.slice(index)}` : `${changelog.trimEnd()}${section}\n`;
   await writeFile('CHANGELOG.md', updated, 'utf8');
+}
+
+async function updateSkillVersion(nextVersion) {
+  const file = 'skills/testloop/SKILL.md';
+  const skill = await readFile(file, 'utf8');
+  const pattern = /(\nmetadata:\n(?:[ \t]+[^\n]+\n)*?[ \t]+version:\s*)["']?[^"'\n]+["']?/;
+  if (!pattern.test(skill)) throw new Error(`${file} is missing metadata.version.`);
+  await writeFile(file, skill.replace(pattern, `$1"${nextVersion}"`), 'utf8');
 }
 
 async function updateJson(file, transform) {

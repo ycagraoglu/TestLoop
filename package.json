@@ -22,11 +22,12 @@
   "scripts": {
     "test": "node --test",
     "check": "node scripts/check.js",
-    "verify": "npm run check && npm test && npm run pack:check",
+    "skill:check": "node scripts/validate-skill.js",
+    "verify": "npm run check && npm run skill:check && npm test && npm run pack:check",
     "pack:check": "node scripts/package-check.js",
     "release:check": "node scripts/release-local.js --dry-run",
     "release": "node scripts/release-local.js",
-    "prepack": "npm run check && npm test"
+    "prepack": "npm run check && npm run skill:check && npm test"
   },
   "engines": {
     "node": ">=20"
@@ -47,6 +48,7 @@
     "aspnetcore",
     "api-testing",
     "agents",
+    "agent-skills",
     "openapi",
     "ef-core"
   ]

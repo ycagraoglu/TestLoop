@@ -4,6 +4,8 @@
 
 TestLoop is an agent-native verification workflow for ASP.NET Core Web APIs. It discovers endpoints, resolves valid fixtures, executes real HTTP requests, classifies failures, delegates confirmed defects to independent diagnosis/fix/review roles, and retests only after approval.
 
+TestLoop includes an [Agent Skills](https://agentskills.io/) compatible skill at `skills/testloop/SKILL.md` and a deterministic CLI that performs the underlying project analysis and test execution.
+
 ## Trust rule
 
 An endpoint is never marked as failed until authentication, persisted dependencies, foreign keys, validation constraints, tenant context, and relevant business preconditions are verified. Unresolved preconditions are `BLOCKED`, never fake failures.
@@ -22,7 +24,8 @@ An endpoint is never marked as failed until authentication, persisted dependenci
 - gated workflow state, classification, retry budgets, and agent-call budgets
 - external diagnosis, bugfix, and independent review role adapters
 - retest only after review returns `APPROVED`
-- Claude-style plugin metadata, skill, role prompts, schemas, and configuration template
+- Agent Skills compatible metadata and instructions
+- Claude-style plugin metadata, role prompts, schemas, and configuration template
 
 ## Install and verify
 
@@ -33,6 +36,30 @@ npm link
 ```
 
 Node.js 20 or newer is required. The runner has no runtime npm dependencies. Verification is intentionally local and does not require GitHub Actions.
+
+`npm run verify` performs JavaScript syntax checks, Agent Skills specification checks, automated tests, and npm package-content verification. The skill check can also be run independently:
+
+```bash
+npm run skill:check
+```
+
+## Agent Skill
+
+The portable skill is located at:
+
+```text
+skills/testloop/SKILL.md
+```
+
+Its frontmatter uses the standard `name`, `description`, `license`, `compatibility`, and `metadata` fields. The skill documents the `smoke`, `standard`, and `deep` modes and instructs compatible agents to delegate deterministic operations to the TestLoop CLI.
+
+Clients that use the cross-client `.agents/skills/` discovery convention can install or copy the `skills/testloop` directory into:
+
+```text
+.agents/skills/testloop/
+```
+
+The Agent Skills specification defines the contents of a skill directory; installation and discovery locations may vary by client.
 
 ## Commands
 
@@ -78,7 +105,7 @@ The release command performs these checks and operations in order:
 1. Requires a clean local `main` branch that exactly matches `origin/main`.
 2. Verifies npm and GitHub CLI authentication.
 3. Updates `package.json`, `package-lock.json`, Claude plugin metadata, and `CHANGELOG.md`.
-4. Runs syntax checks, tests, and npm package-content verification.
+4. Runs syntax checks, Agent Skills validation, tests, and npm package-content verification.
 5. Creates the release commit and annotated Git tag.
 6. Publishes the public npm package from the local machine.
 7. Pushes the release commit and tag to GitHub.

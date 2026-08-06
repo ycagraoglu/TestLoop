@@ -4,12 +4,50 @@ description: >
   Verify ASP.NET Core Web API behavior through evidence-backed fixtures, real HTTP execution,
   failure diagnosis, minimal repair, independent review, and retesting. Use when asked to test,
   validate, diagnose, repair, or regression-check controller-based ASP.NET Core API endpoints.
-argument-hint: "[smoke|standard|deep] [scope]"
+license: Apache-2.0
+compatibility: Requires Node.js 20+ and an isolated Development or Test ASP.NET Core Web API environment.
+metadata:
+  author: ycagraoglu
+  version: "0.5.0"
 ---
 
 # TestLoop
 
 TestLoop is a gated verification workflow for ASP.NET Core Web APIs.
+
+## Invocation
+
+Use one of these modes when the user requests a TestLoop run:
+
+```text
+smoke [scope]
+standard [scope]
+deep [scope]
+```
+
+Default to `standard` when the user does not choose a mode. Treat `scope` as the project, feature, controller, endpoint, or OpenAPI document the user wants tested.
+
+## CLI usage
+
+Confirm that the CLI is available before running a workflow:
+
+```bash
+testloop --help
+```
+
+Use the deterministic CLI for discovery, source analysis, OpenAPI inventory, planning, build, process startup, and workflow execution:
+
+```bash
+testloop discover <project-path>
+testloop analyze <project-path>
+testloop openapi <openapi-url>
+testloop plan <openapi-url> <project-path> <smoke|standard|deep>
+testloop build <project-file>
+testloop serve <project-file> <base-url> <Development|Test>
+testloop run <config-file>
+```
+
+Do not invent command flags. When an interface is unclear, run `testloop --help` and use the documented command shape. TestLoop commands must not wait for interactive secrets or confirmations; provide required values through configuration, environment variables, or an already authenticated local tool.
 
 ## Non-negotiable rules
 
