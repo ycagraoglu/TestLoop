@@ -38,8 +38,14 @@ export async function startApi({ projectPath, url, environment = 'Development', 
   }
 }
 
+// Allowlist, not a denylist: the Supported MVP profile is Development/Test only, so anything else
+// (a typo, "Staging", "Prod ") must also be refused, not just the literal string "production".
+const SAFE_ENVIRONMENTS = new Set(['development', 'test']);
+
 export function assertSafeEnvironment(environment) {
-  if (/^production$/i.test(String(environment))) throw new Error('TestLoop refuses to start an API in Production.');
+  if (!SAFE_ENVIRONMENTS.has(String(environment).trim().toLowerCase())) {
+    throw new Error(`TestLoop refuses to start an API outside Development/Test (got "${environment}").`);
+  }
 }
 
 async function waitForHttp(baseUrl, timeoutMs, child) {

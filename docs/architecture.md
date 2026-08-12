@@ -10,8 +10,9 @@ TestLoop verifies ASP.NET Core API behavior using evidence-backed test data and 
 2. Valid fixtures must be proven before a test can produce `FAIL`.
 3. Subagents are opened only when ambiguity or a confirmed defect justifies their cost.
 4. The agent that implements a fix cannot approve that fix.
-5. Every workflow transition requires a machine-readable result and an explicit gate.
+5. Every role returns a machine-readable result, validated against its contract before it is acted on.
 6. Production and unsafe side-effect environments are blocked by default.
+7. The repair pipeline is single-pass: nothing retries, so nothing can loop.
 
 ## Components
 
@@ -29,8 +30,8 @@ Responsible for:
 - executing HTTP requests;
 - capturing logs and correlation identifiers;
 - validating JSON contracts;
-- persisting workflow state;
-- enforcing budgets, retries, and state transitions;
+- persisting run artifacts and the pending-approval state;
+- enforcing the fixture, approval, and review gates;
 - producing reproducible evidence artifacts.
 
 ### Project manifest
@@ -47,13 +48,17 @@ A reusable, incrementally refreshed representation of:
 
 ### LLM roles
 
-The MVP uses a small number of roles:
+The MVP configures three external role adapters, each an executable receiving one JSON object on
+stdin and returning one JSON object on stdout (contracts in `agents/`):
 
-- **Coordinator:** selects the next legal workflow transition.
-- **Test Analyst:** plans valid scenarios and requests fixture resolution.
-- **Failure Diagnostician:** distinguishes test-data, environment, contract, and application failures.
-- **Bugfix Agent:** applies the smallest root-cause correction after a defect is confirmed.
-- **Review Agent:** independently checks correctness, security, scope, and regression risk.
+- **`diagnose`** (Failure Diagnostician): distinguishes test-data, environment, contract, and
+  application failures.
+- **`fix`** (Bugfix Agent): applies the smallest root-cause correction after a defect is confirmed
+  and a human has approved it.
+- **`review`** (Review Agent): independently checks correctness, security, scope, and regression
+  risk. Must not be the same session as `fix`.
+
+Sequencing is the runner's job, not a role's; there is no coordinator agent.
 
 ### Evidence store
 
@@ -72,4 +77,7 @@ A result may be:
 - `BLOCKED`: the environment or required fixture could not be safely established;
 - `EXPECTED_REJECTION`: the API correctly rejected the scenario;
 - `SPEC_MISMATCH`: runtime behavior and the declared OpenAPI contract differ;
-- `INCONCLUSIVE`: available evidence cannot support a reliable judgment.
+- `INCONCLUSIVE`: available evidence cannot support a reliable judgment;
+- `AWAITING_APPROVAL`: a defect is confirmed and is waiting for a human decision;
+- `SKIPPED`: a human declined the confirmed defect;
+- `ESCALATED`: the fix or review step could not complete, or a role failed its contract.

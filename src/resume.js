@@ -1,7 +1,7 @@
 import { ArtifactStore } from './artifact-store.js';
 import { resolveAuthContext } from './auth.js';
 import { redactValue } from './redaction.js';
-import { summarizeStatus } from './orchestrator.js';
+import { createContext, runnerError, runScenarios, shouldStop, summarizeStatus } from './orchestrator.js';
 import { runApprovedFix } from './scenario-runner.js';
 import { createSecurityPolicy } from './security-policy.js';
 
@@ -16,36 +16,51 @@ export async function resumeVerification({ root = process.cwd(), runId, scenario
   const config = await readRequired(store, 'config.json', `No persisted configuration found for run ${runId}.`);
   const diagnosis = await readOptional(store, `${scenarioId}.diagnose.json`);
   const pending = await readOptional(store, `${scenarioId}.resume-state.json`);
-  const scenario = config.scenarios.find(item => item.id === scenarioId);
+  const scenarioIndex = config.scenarios.findIndex(item => item.id === scenarioId);
 
-  if (!scenario) throw new Error(`Scenario ${scenarioId} was not found in the persisted run configuration.`);
+  if (scenarioIndex === -1) throw new Error(`Scenario ${scenarioId} was not found in the persisted run configuration.`);
   if (!diagnosis || diagnosis.status !== 'APPLICATION_BUG' || !pending) {
     throw new Error(`Scenario ${scenarioId} has no pending approval in run ${runId}.`);
   }
 
   const securityPolicy = createSecurityPolicy(config.security);
+  const auth = await resolveAuthContext(config.auth ?? { type: 'none' }, securityPolicy);
+  const context = createContext(config, auth, store, securityPolicy);
 
+  // Same reasoning as the scenario loop: a throwing fix/review role must not cost the run its
+  // summary, and here it would also strand every scenario queued behind this one.
   const result = decision === 'decline'
     ? { id: scenarioId, status: 'SKIPPED', classification: 'DECLINED_BY_USER', diagnosis, reason: 'Human declined the confirmed application bug fix.' }
-    : await approveAndRetest({ config, scenario, diagnosis, pending, store, securityPolicy });
+    : await runApprovedFix({ scenario: config.scenarios[scenarioIndex], diagnosis, request: pending.request, expectedStatuses: pending.expectedStatuses, context })
+      .catch(error => runnerError(scenarioId, error));
 
   await store.write(`${scenarioId}.resume.json`, redactValue(result));
-  await updateSummary(store, result);
+  if (result.output) context.outputs[result.id] = result.output;
+  await continueRun({ store, config, context, scenarioIndex, result });
   return result;
 }
 
-async function approveAndRetest({ config, scenario, diagnosis, pending, store, securityPolicy }) {
-  const auth = await resolveAuthContext(config.auth ?? { type: 'none' }, securityPolicy);
-  const request = { ...pending.request, headers: { ...pending.request.headers, ...auth.headers } };
-  const context = { config, store, securityPolicy };
-  return runApprovedFix({ scenario, diagnosis, request, expectedStatuses: pending.expectedStatuses, context });
-}
-
-async function updateSummary(store, result) {
+// Resuming resolves only the one scenario the run paused on. A human decision on that scenario
+// shouldn't strand everything configured after it, so pick the original scenario loop back up
+// from there too -- unless the resolved result itself says to stop, same rule the first run used.
+async function continueRun({ store, config, context, scenarioIndex, result }) {
   const summary = await readOptional(store, 'summary.json');
-  if (!summary || !Array.isArray(summary.results)) return;
-  const results = summary.results.map(item => (item.id === result.id ? result : item));
-  const blockers = summary.blockers ?? [];
+  const priorResults = Array.isArray(summary?.results) ? summary.results : [];
+  for (const item of priorResults) {
+    if (item.output) context.outputs[item.id] = item.output;
+  }
+
+  const results = priorResults.map(item => (item.id === result.id ? result : item));
+  const blockers = [...(summary?.blockers ?? [])];
+
+  if (!shouldStop(config, result)) {
+    const attempted = new Set(results.map(item => item.id));
+    const remaining = config.scenarios.slice(scenarioIndex + 1).filter(scenario => !attempted.has(scenario.id));
+    const continued = await runScenarios(config, context, remaining);
+    results.push(...continued.results);
+    blockers.push(...continued.blockers);
+  }
+
   await store.complete({ status: summarizeStatus(results, blockers), results, blockers });
 }
 

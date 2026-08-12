@@ -62,7 +62,7 @@ Do not invent command flags. When an interface is unclear, run `testloop --help`
 8. Do not weaken validation, authorization, tenant isolation, or ownership checks to make a test pass.
 9. Do not run destructive or externally visible operations against production.
 10. Preserve reproducible requests, responses, logs, fixture proofs, diffs, and review decisions.
-11. Respect workflow and token budgets; escalate instead of looping indefinitely.
+11. Report `BLOCKED` or `ESCALATED` instead of retrying a failed step; the pipeline is single-pass by design.
 
 ## Supported MVP profile
 
@@ -95,28 +95,34 @@ Run standard behavior plus negative, boundary, role, tenant, and regression scen
 Follow this exact sequence:
 
 ```text
-DISCOVER → PLAN → RESOLVE_FIXTURES → PREPARE_AUTH → GENERATE_REQUEST
+DISCOVER → PLAN → RESOLVE FIXTURES → AUTHENTICATE → BUILD REQUEST
 → EXECUTE → VERIFY
 ```
 
 If verification passes, complete the workflow.
 
-If verification is unexpected:
+If verification is unexpected, `testloop run` classifies it first, and only a 5xx with every
+precondition already evidenced reaches the `diagnose` role. Each branch below ends the scenario:
+nothing loops back, so report `BLOCKED` or `ESCALATED` rather than retrying a step.
 
 ```text
 DIAGNOSE
-  ├─ fixture problem → RESOLVE_FIXTURES
-  ├─ authentication problem → PREPARE_AUTH
+  ├─ fixture problem → BLOCKED
+  ├─ authentication problem → BLOCKED
   ├─ environment problem → BLOCKED
-  ├─ expected rejection → COMPLETE
-  ├─ specification mismatch → REPORT
-  ├─ inconclusive → REPORT
+  ├─ expected rejection → PASS
+  ├─ specification mismatch → SPEC_MISMATCH (reported, never repaired)
+  ├─ inconclusive → BLOCKED
   └─ confirmed application bug
+        ├─ mode: smoke → FAIL (reported, never repaired)
         ├─ requireApproval: false → FIX → REVIEW → RETEST
         └─ default (gated) → AWAITING_APPROVAL
               ├─ human declines → SKIPPED
               └─ human approves (`testloop resume ... approve`) → FIX → REVIEW → RETEST
 ```
+
+A role adapter that times out, exits non-zero, or returns a status outside its contract ends that
+scenario as `ESCALATED` / `RUNNER_ERROR`. The run continues and still writes its evidence trail.
 
 ## Efficient agent use
 

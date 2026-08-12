@@ -24,8 +24,7 @@ export async function executeHttp(request, { timeoutMs = 30000, securityPolicy =
     const maxBytes = securityPolicy?.maxResponseBytes ?? 2_000_000;
     const contentLength = Number(response.headers.get('content-length') ?? 0);
     if (contentLength > maxBytes) throw new Error(`HTTP response exceeds ${maxBytes} bytes.`);
-    const buffer = Buffer.from(await response.arrayBuffer());
-    if (buffer.length > maxBytes) throw new Error(`HTTP response exceeds ${maxBytes} bytes.`);
+    const buffer = await readBoundedBody(response, maxBytes);
     const text = buffer.toString('utf8');
     let parsedBody = text;
     try { parsedBody = text ? JSON.parse(text) : null; } catch { /* preserve text */ }
@@ -39,4 +38,24 @@ export async function executeHttp(request, { timeoutMs = 30000, securityPolicy =
   } finally {
     clearTimeout(timer);
   }
+}
+
+// Bounds actual memory use, unlike checking response.arrayBuffer().length after the fact: a
+// chunked response with no content-length would otherwise be buffered in full before any check ran.
+async function readBoundedBody(response, maxBytes) {
+  if (!response.body) return Buffer.alloc(0);
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      throw new Error(`HTTP response exceeds ${maxBytes} bytes.`);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks.map(chunk => Buffer.from(chunk)));
 }

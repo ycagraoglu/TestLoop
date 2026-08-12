@@ -52,7 +52,7 @@ export async function runRole(role, input, config = {}, securityPolicy = null) {
 
 export function validateRoleResult(role, result) {
   if (!result || typeof result !== 'object' || typeof result.status !== 'string') throw new Error(`${role} result requires status.`);
-  if (role === 'diagnose' && !['FIXTURE_ERROR', 'AUTH_ERROR', 'ENVIRONMENT_ERROR', 'EXPECTED_REJECTION', 'APPLICATION_BUG', 'INCONCLUSIVE'].includes(result.status)) {
+  if (role === 'diagnose' && !['FIXTURE_ERROR', 'AUTH_ERROR', 'ENVIRONMENT_ERROR', 'EXPECTED_REJECTION', 'SPEC_MISMATCH', 'APPLICATION_BUG', 'INCONCLUSIVE'].includes(result.status)) {
     throw new Error(`Invalid diagnosis status: ${result.status}`);
   }
   if (role === 'fix' && !['SUCCESS', 'FAILURE'].includes(result.status)) throw new Error(`Invalid fix status: ${result.status}`);

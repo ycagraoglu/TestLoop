@@ -58,9 +58,27 @@ export function buildRestrictedEnvironment(policy, additions = {}) {
 }
 
 function isPrivateHost(hostname) {
-  const normalized = hostname.toLowerCase();
+  // URL.hostname wraps IPv6 literals in brackets ("[::1]"); net.isIP() and the checks below only
+  // recognize the bare form, so every IPv6 check here silently no-ops without this strip.
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, '');
   if (LOOPBACK_HOSTS.has(normalized) || normalized.endsWith('.localhost') || normalized.endsWith('.local')) return true;
   if (net.isIP(normalized) === 4) return PRIVATE_IPV4.some(pattern => pattern.test(normalized));
-  if (net.isIP(normalized) === 6) return normalized === '::1' || normalized.startsWith('fc') || normalized.startsWith('fd') || normalized.startsWith('fe80:');
+  if (net.isIP(normalized) === 6) {
+    const mapped = ipv4MappedAddress(normalized);
+    if (mapped) return PRIVATE_IPV4.some(pattern => pattern.test(mapped));
+    return normalized === '::1' || normalized.startsWith('fc') || normalized.startsWith('fd') || normalized.startsWith('fe80:');
+  }
   return false;
+}
+
+// Handles both the literal ("::ffff:127.0.0.1") and hex-compressed ("::ffff:7f00:1") forms an
+// IPv4-mapped IPv6 address can take once a URL parser has canonicalized it.
+function ipv4MappedAddress(address) {
+  const dotted = address.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (dotted) return dotted[1];
+  const hex = address.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (!hex) return null;
+  const high = parseInt(hex[1], 16);
+  const low = parseInt(hex[2], 16);
+  return [high >> 8, high & 0xff, low >> 8, low & 0xff].join('.');
 }

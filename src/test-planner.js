@@ -1,3 +1,5 @@
+import { normalizeRoute } from './source-analyzer.js';
+
 const METHOD_ORDER = new Map([['POST', 0], ['GET', 1], ['PUT', 2], ['PATCH', 3], ['DELETE', 4]]);
 
 export function buildTestPlan({ operations, sourceManifest = null, mode = 'standard' }) {
@@ -46,10 +48,6 @@ function compareOperations(left, right) {
 
 function key(method, route) {
   return `${String(method).toUpperCase()} ${normalizeRoute(route)}`;
-}
-
-function normalizeRoute(route) {
-  return `/${String(route).replace(/^\/+|\/+$/g, '')}`;
 }
 
 function routeRoot(route) {

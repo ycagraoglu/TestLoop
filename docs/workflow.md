@@ -1,58 +1,63 @@
 # Gated Verification Workflow
 
-## State machine
+## Per-scenario pipeline
+
+`testloop run` walks each configured scenario through this pipeline. It is a single pass: no step
+retries itself, and every branch below ends the scenario.
 
 ```text
-DISCOVER
-  ↓ SUCCESS
-PLAN
-  ↓ SUCCESS
-RESOLVE_FIXTURES
-  ↓ SUCCESS
-PREPARE_AUTH
-  ↓ SUCCESS
-GENERATE_REQUEST
-  ↓ SUCCESS
-EXECUTE
-  ↓ SUCCESS
-VERIFY
-  ├─ PASS ─────────────────────────────→ COMPLETE
-  ├─ BLOCKED ──────────────────────────→ REPORT
-  └─ UNEXPECTED_RESULT
+RESOLVE FIXTURES ──── not verified ────→ BLOCKED   (the endpoint is never called)
+       │ verified
+       ↓
+   EXECUTE  (authenticated request, real HTTP)
+       ↓
+   CLASSIFY
+  ├─ expected status ──────────────────→ PASS
+  ├─ ENVIRONMENT_ERROR / AUTH_ERROR / FIXTURE_ERROR / INCONCLUSIVE
+  │                                    → FAIL or BLOCKED, without calling any role
+  └─ APPLICATION_BUG (5xx with every precondition evidenced)
              ↓
-          DIAGNOSE
-  ├─ FIXTURE_ERROR ────────────────────→ RESOLVE_FIXTURES
-  ├─ AUTH_ERROR ───────────────────────→ PREPARE_AUTH
-  ├─ ENVIRONMENT_ERROR ────────────────→ REPORT
-  ├─ EXPECTED_REJECTION ───────────────→ COMPLETE
-  ├─ SPEC_MISMATCH ────────────────────→ REPORT
-  ├─ INCONCLUSIVE ─────────────────────→ REPORT
+        DIAGNOSE  (role)
+  ├─ EXPECTED_REJECTION ───────────────→ PASS
+  ├─ SPEC_MISMATCH ────────────────────→ SPEC_MISMATCH (reported, never repaired)
+  ├─ FIXTURE_ERROR / AUTH_ERROR / ENVIRONMENT_ERROR / INCONCLUSIVE
+  │                                    → BLOCKED
   └─ APPLICATION_BUG
-             ↓
-      AWAITING_APPROVAL
-  ├─ DECLINED ──────────────────────────→ SKIPPED
-  └─ APPROVED
-             ↓
-            FIX
-             ↓ SUCCESS
-           REVIEW
-  ├─ CHANGES_REQUESTED ────────────────→ FIX
-  └─ APPROVED
-             ↓
-           RETEST
-  ├─ PASS ─────────────────────────────→ COMPLETE
-  └─ FAIL ─────────────────────────────→ DIAGNOSE
+        ├─ mode: smoke ────────────────→ FAIL (reported, never repaired)
+        ├─ requireApproval: false ─────→ FIX
+        └─ default ───────────────────→ AWAITING_APPROVAL  (run stops here)
+                                            ├─ decline → SKIPPED
+                                            └─ approve → FIX
+                                                     ↓
+                                              FIX (role)
+                                       ├─ not SUCCESS → ESCALATED
+                                       └─ SUCCESS
+                                                     ↓
+                                             REVIEW (role)
+                                       ├─ not APPROVED → ESCALATED
+                                       └─ APPROVED
+                                                     ↓
+                                        RETEST (re-authenticated)
+                                       ├─ expected status → PASS (PASS_AFTER_FIX)
+                                       └─ otherwise → FAIL (RETEST_FAILED)
 ```
 
-## Gate rules
+`CHANGES_REQUESTED` from review and a failed retest are both terminal (`ESCALATED` / `FAIL`); TestLoop
+does not loop back into `FIX` or `DIAGNOSE`. That is why it needs no retry budgets: there is nothing
+that can run twice.
 
-A state transition is legal only when:
+## Gates
 
-1. the current role returns schema-valid output;
-2. the required artifacts exist;
-3. the expected status or decision is present;
-4. retry and token budgets remain available;
-5. the next role is permitted for the current state.
+Three gates decide whether the pipeline may continue, and each one fails closed:
+
+1. **Fixture gate** — an unverified persisted dependency blocks the scenario before the endpoint is
+   called. A supplied value with no evidence does not count as verified, and a random one is refused.
+2. **Approval gate** — a confirmed `APPLICATION_BUG` does not reach the fix role without an explicit
+   human `approve` (unless `requireApproval: false`), and never in `smoke` mode.
+3. **Review gate** — the retest does not run until an independent reviewer returns `APPROVED`.
+
+Role output is validated against its contract before any of this proceeds: an unknown status ends the
+scenario as `ESCALATED` rather than being treated as a decision.
 
 ## Fixture resolution order
 
@@ -94,8 +99,16 @@ testloop resume <run-id> <scenario-id> decline
 ends the scenario as `SKIPPED` and never calls the fix role. This gate is separate from, and precedes,
 the review gate below.
 
+Either decision then picks the scenario loop back up: any scenarios configured after the paused one
+that never ran (the original run stopped at `AWAITING_APPROVAL`) are attempted next, reusing outputs
+captured by every scenario resolved so far, including the just-approved one. The run only stops there
+too if the resumed result itself is `FAIL`, `ESCALATED`, or another `AWAITING_APPROVAL`.
+
 Setting `requireApproval: false` in the run config removes this gate: `DIAGNOSE` goes straight to `FIX`
 on `APPLICATION_BUG`, in the same process, with no `testloop resume` step.
+
+`mode: "smoke"` overrides both: a confirmed `APPLICATION_BUG` is reported as `FAIL` and the fix role is
+never invoked, with or without `requireApproval`.
 
 Either way, the fix role receives `projectInstructions`: the contents of the target project's own
 root-level `AGENTS.md` and/or `SKILL.md`, when present, so the fix follows that project's conventions.
@@ -111,19 +124,27 @@ Retest cannot begin until an independent reviewer returns `APPROVED`. The review
 - does not introduce unrelated refactoring;
 - includes the necessary regression scope.
 
-## Loop limits
+## Role failure
 
-Default MVP limits:
+Role adapters are external processes. A timeout, a non-zero exit, output over the size limit, or a
+status outside the role's contract ends that scenario as `ESCALATED` with classification
+`RUNNER_ERROR`. It never aborts the run: remaining scenarios still execute and `summary.json` is still
+written, because the evidence trail is worth more than the failed step.
 
-```json
-{
-  "maxFixtureAttempts": 2,
-  "maxDiagnosisAttempts": 2,
-  "maxFixAttempts": 2,
-  "maxReviewCycles": 2,
-  "maxRetestAttempts": 2,
-  "maxAgentCallsPerWorkflow": 8
-}
-```
+## Cost ceiling
 
-When a limit is reached, the workflow ends as `ESCALATED`; it never loops indefinitely.
+The pipeline is single-pass, so a scenario's cost is bounded by construction rather than by a budget
+counter: at most one `diagnose`, one `fix`, and one `review` call, and at most one retest. Nothing
+retries, so nothing can loop.
+
+What is bounded explicitly:
+
+| Limit | Where | Default |
+|---|---|---|
+| Role output size | `security.maxRoleOutputBytes` | 1 MB |
+| HTTP response size | `security.maxResponseBytes` | 2 MB |
+| Role runtime | `roles.timeoutMs` | 120 s |
+| HTTP request timeout | `timeoutMs` | 30 s |
+| Fixture creation recursion | `maxCreationDepth` | 3 |
+
+Reaching any of these ends the scenario (`ESCALATED` or `BLOCKED`), never the run.

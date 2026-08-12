@@ -1,7 +1,7 @@
-import { readdir, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { collectProjectFiles } from './project-files.js';
 
-const IGNORED = new Set(['.git', 'bin', 'obj', 'node_modules', '.testloop']);
 const HTTP_ATTRIBUTES = new Map([
   ['HttpGet', 'GET'],
   ['HttpPost', 'POST'],
@@ -50,17 +50,7 @@ export async function analyzeAspNetSource(root = process.cwd()) {
 }
 
 async function collectCsFiles(root) {
-  const results = [];
-  async function walk(directory) {
-    for (const entry of await readdir(directory, { withFileTypes: true })) {
-      if (entry.isDirectory() && IGNORED.has(entry.name)) continue;
-      const fullPath = path.join(directory, entry.name);
-      if (entry.isDirectory()) await walk(fullPath);
-      else if (entry.name.endsWith('.cs')) results.push(fullPath);
-    }
-  }
-  await walk(root);
-  return results;
+  return (await collectProjectFiles(root)).filter(file => file.endsWith('.cs'));
 }
 
 function parseSourceFile(root, file, source) {
@@ -294,7 +284,9 @@ function joinRoute(base, action) {
   return normalizeRoute([base, action].filter(Boolean).join('/'));
 }
 
-function normalizeRoute(route) {
+// Shared with the test planner: both sides of the OpenAPI-to-source endpoint match must normalize
+// routes identically, or an operation silently fails to find the source endpoint it belongs to.
+export function normalizeRoute(route) {
   return `/${route}`.replace(/\/{2,}/g, '/').replace(/\/$/, '') || '/';
 }
 

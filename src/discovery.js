@@ -1,24 +1,14 @@
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
-
-const IGNORED = new Set(['.git', 'bin', 'obj', 'node_modules', '.testloop']);
+import { collectProjectFiles } from './project-files.js';
 
 export async function discoverDotnetProjects(root = process.cwd()) {
-  const projects = [];
-  const solutions = [];
-
-  async function walk(dir) {
-    for (const entry of await readdir(dir, { withFileTypes: true })) {
-      if (entry.isDirectory() && IGNORED.has(entry.name)) continue;
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) await walk(full);
-      else if (entry.name.endsWith('.csproj')) projects.push(await inspectProject(full));
-      else if (entry.name.endsWith('.sln')) solutions.push(path.relative(root, full));
-    }
-  }
-
-  await walk(root);
-  return { root: path.resolve(root), solutions, projects };
+  const files = await collectProjectFiles(root);
+  return {
+    root: path.resolve(root),
+    solutions: files.filter(file => file.endsWith('.sln')).map(file => path.relative(root, file)),
+    projects: await Promise.all(files.filter(file => file.endsWith('.csproj')).map(inspectProject))
+  };
 }
 
 async function inspectProject(file) {

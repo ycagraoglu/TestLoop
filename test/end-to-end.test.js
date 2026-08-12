@@ -55,6 +55,25 @@ async function writeCapturingRoleAdapter(directory) {
   return target;
 }
 
+// Writes an adapter answering with caller-chosen statuses, for the paths where the canned
+// APPLICATION_BUG/SUCCESS/APPROVED trio is not what is under test.
+async function writeStatusAdapter(directory, responses, filename = 'status-adapter.mjs') {
+  const target = path.join(directory, filename);
+  await writeFile(target, `
+let input = '';
+process.stdin.on('data', chunk => { input += chunk; });
+process.stdin.on('end', () => {
+  const responses = ${JSON.stringify(responses)};
+  process.stdout.write(JSON.stringify(responses[process.env.TESTLOOP_ROLE] ?? { status: 'INCONCLUSIVE' }));
+});
+`, 'utf8');
+  return target;
+}
+
+function readSummary(root, runId) {
+  return readFile(path.join(root, '.testloop', 'runs', runId, 'summary.json'), 'utf8').then(JSON.parse);
+}
+
 async function withServer(handler, action) {
   const server = createServer(handler);
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -303,5 +322,270 @@ test('projectInstructions is null for the fix role when no AGENTS.md or SKILL.md
     await runVerification(config);
     const captured = JSON.parse(await readFile(path.join(root, 'fix-input.json'), 'utf8'));
     assert.equal(captured.projectInstructions, null);
+  });
+});
+
+test('propagates a captured value into a later scenario\'s path via {scenario.captured} interpolation', async () => {
+  const productRequests = [];
+  await withServer((request, response) => {
+    response.setHeader('content-type', 'application/json');
+    if (request.url === '/products' && request.method === 'POST') {
+      response.statusCode = 201;
+      return response.end(JSON.stringify({ id: 'created-id-123' }));
+    }
+    if (request.url?.startsWith('/products/')) {
+      productRequests.push(request.url);
+      response.statusCode = 200;
+      return response.end(JSON.stringify({ id: request.url.split('/').pop() }));
+    }
+    response.statusCode = 404;
+    response.end('{}');
+  }, async baseUrl => {
+    const root = await mkdtemp(path.join(tmpdir(), 'testloop-interpolate-'));
+    const result = await runVerification({
+      root,
+      baseUrl,
+      security: { allowPrivateNetwork: true, allowedHosts: ['127.0.0.1'] },
+      scenarios: [
+        { id: 'create-product', method: 'POST', path: '/products', expectedStatuses: [201], body: { name: 'Widget' }, capture: { productId: 'id' } },
+        { id: 'get-product', method: 'GET', path: '/products/{create-product.productId}', expectedStatuses: [200] }
+      ]
+    });
+
+    assert.equal(result.status, 'PASS');
+    assert.equal(result.results[1].status, 'PASS');
+    assert.deepEqual(productRequests, ['/products/created-id-123']);
+  });
+});
+
+test('a fixed, then-approved scenario hands its captured output to the next scenario, which then runs', async () => {
+  let productCalls = 0;
+  const productRequests = [];
+  await withServer((request, response) => {
+    response.setHeader('content-type', 'application/json');
+    if (request.url === '/products' && request.method === 'POST') {
+      productCalls += 1;
+      response.statusCode = productCalls === 1 ? 500 : 201;
+      return response.end(JSON.stringify({ id: 'fixed-product-id' }));
+    }
+    if (request.url?.startsWith('/products/')) {
+      productRequests.push(request.url);
+      response.statusCode = 200;
+      return response.end(JSON.stringify({ id: request.url.split('/').pop() }));
+    }
+    response.statusCode = 404;
+    response.end('{}');
+  }, async baseUrl => {
+    const root = await mkdtemp(path.join(tmpdir(), 'testloop-resume-chain-'));
+    const roleAdapter = await writeRoleAdapter(root);
+    const config = {
+      root,
+      runId: 'resume-chain-run',
+      baseUrl,
+      security: { allowPrivateNetwork: true, allowedHosts: ['127.0.0.1'], allowedCommands: ['node'] },
+      roles: {
+        diagnose: { command: ['node', roleAdapter] },
+        fix: { command: ['node', roleAdapter] },
+        review: { command: ['node', roleAdapter] }
+      },
+      scenarios: [
+        { id: 'create-product', method: 'POST', path: '/products', expectedStatuses: [201], body: { name: 'Widget' }, capture: { productId: 'id' } },
+        { id: 'get-product', method: 'GET', path: '/products/{create-product.productId}', expectedStatuses: [200] }
+      ]
+    };
+
+    const first = await runVerification(config);
+    assert.equal(first.status, 'AWAITING_APPROVAL');
+    assert.equal(first.results.length, 1, 'get-product must not have been attempted yet: the loop breaks at AWAITING_APPROVAL');
+
+    const resumed = await resumeVerification({ root, runId: 'resume-chain-run', scenarioId: 'create-product', decision: 'approve' });
+    assert.equal(resumed.status, 'PASS');
+    assert.equal(resumed.output.productId, 'fixed-product-id');
+    assert.deepEqual(productRequests, ['/products/fixed-product-id'], 'get-product must have used the fixed run\'s captured id, not a stale/missing one');
+
+    const summaryPath = path.join(root, '.testloop', 'runs', 'resume-chain-run', 'summary.json');
+    const summary = JSON.parse(await readFile(summaryPath, 'utf8'));
+    assert.equal(summary.status, 'PASS');
+    assert.deepEqual(summary.results.map(item => item.id), ['create-product', 'get-product']);
+    assert.equal(summary.results[1].status, 'PASS');
+  });
+});
+
+test('declining still lets an independent later scenario run', async () => {
+  let healthCalls = 0;
+  await withServer((request, response) => {
+    response.setHeader('content-type', 'application/json');
+    if (request.url === '/products' && request.method === 'POST') { response.statusCode = 500; return response.end('{}'); }
+    if (request.url === '/health') { healthCalls += 1; response.statusCode = 200; return response.end('{}'); }
+    response.statusCode = 404;
+    response.end('{}');
+  }, async baseUrl => {
+    const root = await mkdtemp(path.join(tmpdir(), 'testloop-decline-chain-'));
+    const roleAdapter = await writeRoleAdapter(root);
+    const config = {
+      root,
+      runId: 'decline-chain-run',
+      baseUrl,
+      security: { allowPrivateNetwork: true, allowedHosts: ['127.0.0.1'], allowedCommands: ['node'] },
+      roles: { diagnose: { command: ['node', roleAdapter] } },
+      scenarios: [
+        { id: 'create-product', method: 'POST', path: '/products', expectedStatuses: [201], body: { name: 'Widget' } },
+        { id: 'health-check', method: 'GET', path: '/health', expectedStatuses: [200] }
+      ]
+    };
+
+    const first = await runVerification(config);
+    assert.equal(first.status, 'AWAITING_APPROVAL');
+    assert.equal(first.results.length, 1);
+
+    await resumeVerification({ root, runId: 'decline-chain-run', scenarioId: 'create-product', decision: 'decline' });
+    assert.equal(healthCalls, 1, 'health-check must have run after the decline, not been stranded');
+
+    const summaryPath = path.join(root, '.testloop', 'runs', 'decline-chain-run', 'summary.json');
+    const summary = JSON.parse(await readFile(summaryPath, 'utf8'));
+    assert.deepEqual(summary.results.map(item => item.id), ['create-product', 'health-check']);
+    assert.equal(summary.results[0].status, 'SKIPPED');
+    assert.equal(summary.results[1].status, 'PASS');
+  });
+});
+
+test('re-authenticates before the post-fix retest instead of reusing a possibly-stale token', async () => {
+  let loginCalls = 0;
+  let productCalls = 0;
+  const productAuthHeaders = [];
+  await withServer((request, response) => {
+    response.setHeader('content-type', 'application/json');
+    if (request.url === '/login') {
+      loginCalls += 1;
+      return response.end(JSON.stringify({ token: `token-${loginCalls}` }));
+    }
+    if (request.url === '/products' && request.method === 'POST') {
+      productCalls += 1;
+      productAuthHeaders.push(request.headers.authorization);
+      response.statusCode = productCalls === 1 ? 500 : 201;
+      return response.end(JSON.stringify({ id: 'product-1' }));
+    }
+    response.statusCode = 404;
+    response.end('{}');
+  }, async baseUrl => {
+    const root = await mkdtemp(path.join(tmpdir(), 'testloop-reauth-'));
+    const roleAdapter = await writeRoleAdapter(root);
+    const config = {
+      root,
+      runId: 'reauth-run',
+      baseUrl,
+      requireApproval: false,
+      security: { allowPrivateNetwork: true, allowedHosts: ['127.0.0.1'], allowedCommands: ['node'] },
+      auth: { type: 'login', url: `${baseUrl}/login`, method: 'POST', body: {}, tokenPath: 'token' },
+      roles: {
+        diagnose: { command: ['node', roleAdapter] },
+        fix: { command: ['node', roleAdapter] },
+        review: { command: ['node', roleAdapter] }
+      },
+      scenarios: [{ id: 'create-product', method: 'POST', path: '/products', expectedStatuses: [201], body: { name: 'Widget' } }]
+    };
+
+    const result = await runVerification(config);
+    assert.equal(result.status, 'PASS');
+    assert.equal(loginCalls, 2, 'once for the initial run, once again before the retest');
+    assert.deepEqual(productAuthHeaders, ['Bearer token-1', 'Bearer token-2']);
+  });
+});
+
+test('reports a SPEC_MISMATCH diagnosis instead of crashing the run on it', async () => {
+  let productCalls = 0;
+  await withServer((request, response) => {
+    response.setHeader('content-type', 'application/json');
+    if (request.url === '/products' && request.method === 'POST') {
+      productCalls += 1;
+      response.statusCode = 500;
+      return response.end('{}');
+    }
+    response.statusCode = 404;
+    response.end('{}');
+  }, async baseUrl => {
+    const root = await mkdtemp(path.join(tmpdir(), 'testloop-spec-mismatch-'));
+    const adapter = await writeStatusAdapter(root, { diagnose: { status: 'SPEC_MISMATCH', summary: 'Contract and runtime differ.' } });
+    const result = await runVerification({
+      root,
+      runId: 'spec-mismatch-run',
+      baseUrl,
+      security: { allowPrivateNetwork: true, allowedHosts: ['127.0.0.1'], allowedCommands: ['node'] },
+      roles: { diagnose: { command: ['node', adapter] }, fix: { command: ['node', adapter] } },
+      scenarios: [{ id: 'create-product', method: 'POST', path: '/products', expectedStatuses: [201], body: { name: 'Widget' } }]
+    });
+
+    assert.equal(result.status, 'SPEC_MISMATCH', 'a spec mismatch must not be summarized as an overall PASS');
+    assert.equal(result.results[0].status, 'SPEC_MISMATCH');
+    assert.equal(result.results[0].fix, undefined, 'SPEC_MISMATCH is reported, never repaired');
+    assert.equal(productCalls, 1, 'no retest should have happened');
+    assert.equal((await readSummary(root, 'spec-mismatch-run')).status, 'SPEC_MISMATCH');
+  });
+});
+
+test('a throwing role costs one scenario, not the run\'s evidence trail', async () => {
+  await withServer((request, response) => {
+    response.setHeader('content-type', 'application/json');
+    response.statusCode = request.url === '/products' && request.method === 'POST' ? 500 : 200;
+    response.end('{}');
+  }, async baseUrl => {
+    const root = await mkdtemp(path.join(tmpdir(), 'testloop-role-throw-'));
+    const adapter = await writeStatusAdapter(root, { diagnose: { status: 'NOT_A_REAL_STATUS', summary: 'malformed' } });
+    const result = await runVerification({
+      root,
+      runId: 'role-throw-run',
+      baseUrl,
+      stopOnFailure: false,
+      security: { allowPrivateNetwork: true, allowedHosts: ['127.0.0.1'], allowedCommands: ['node'] },
+      roles: { diagnose: { command: ['node', adapter] } },
+      scenarios: [
+        { id: 'create-product', method: 'POST', path: '/products', expectedStatuses: [201], body: { name: 'Widget' } },
+        { id: 'health-check', method: 'GET', path: '/health', expectedStatuses: [200] }
+      ]
+    });
+
+    assert.equal(result.results[0].status, 'ESCALATED');
+    assert.equal(result.results[0].classification, 'RUNNER_ERROR');
+    assert.match(result.results[0].reason, /Invalid diagnosis status/);
+    assert.equal(result.results[1].status, 'PASS', 'the next scenario still ran');
+
+    const summary = await readSummary(root, 'role-throw-run');
+    assert.equal(summary.results.length, 2, 'summary.json must exist and hold the full evidence trail');
+  });
+});
+
+test('smoke mode reports a confirmed defect without ever invoking the fix role', async () => {
+  let productCalls = 0;
+  await withServer((request, response) => {
+    response.setHeader('content-type', 'application/json');
+    if (request.url === '/products' && request.method === 'POST') {
+      productCalls += 1;
+      response.statusCode = productCalls === 1 ? 500 : 201;
+      return response.end('{"id":"product-1"}');
+    }
+    response.statusCode = 404;
+    response.end('{}');
+  }, async baseUrl => {
+    const root = await mkdtemp(path.join(tmpdir(), 'testloop-smoke-'));
+    const roleAdapter = await writeRoleAdapter(root);
+    const result = await runVerification({
+      root,
+      runId: 'smoke-run',
+      baseUrl,
+      mode: 'smoke',
+      requireApproval: false,
+      security: { allowPrivateNetwork: true, allowedHosts: ['127.0.0.1'], allowedCommands: ['node'] },
+      roles: {
+        diagnose: { command: ['node', roleAdapter] },
+        fix: { command: ['node', roleAdapter] },
+        review: { command: ['node', roleAdapter] }
+      },
+      scenarios: [{ id: 'create-product', method: 'POST', path: '/products', expectedStatuses: [201], body: { name: 'Widget' } }]
+    });
+
+    assert.equal(result.results[0].status, 'FAIL');
+    assert.equal(result.results[0].classification, 'APPLICATION_BUG');
+    assert.equal(result.results[0].fix, undefined, 'smoke must not repair, even with requireApproval disabled');
+    assert.equal(productCalls, 1, 'no retest means no fix chain ran');
   });
 });

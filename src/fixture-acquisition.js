@@ -83,8 +83,7 @@ async function resolveEnsureEntity(requirement, source, context) {
     throw new Error(`Fixture creation depth limit (${maxDepth}) exceeded while ensuring ${requirement.entity ?? requirement.property}; check for a dependency cycle.`);
   }
 
-  const creator = typeof context.createEntity === 'function' ? context.createEntity : defaultCreateEntity;
-  const created = await creator(source.create, { ...context, creationDepth: depth + 1 });
+  const created = await createEntity(source.create, { ...context, creationDepth: depth + 1 });
   if (!created?.verified) return null;
 
   const result = fixture(
@@ -97,7 +96,7 @@ async function resolveEnsureEntity(requirement, source, context) {
   return result;
 }
 
-async function defaultCreateEntity(createSpec, context) {
+async function createEntity(createSpec, context) {
   const response = await executeHttp({
     method: createSpec.method ?? 'POST',
     url: createSpec.url,

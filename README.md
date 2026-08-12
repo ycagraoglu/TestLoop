@@ -23,7 +23,7 @@ An endpoint is never marked as failed until authentication, persisted dependenci
 - safe `dotnet build` and Development/Test API process lifecycle
 - gated workflow state, classification, retry budgets, and agent-call budgets
 - external diagnosis, bugfix, and independent review role adapters
-- confirmed application bugs pause at `AWAITING_APPROVAL` by default; the fix role only runs after `testloop resume ... approve` (or immediately when `requireApproval: false`), and a decline ends the scenario as `SKIPPED`
+- confirmed application bugs pause at `AWAITING_APPROVAL` by default; the fix role only runs after `testloop resume ... approve` (or immediately when `requireApproval: false`), and a decline ends the scenario as `SKIPPED`; either way, `resume` then continues any later scenarios that hadn't run yet
 - the fix role receives the target project's own root-level `AGENTS.md`/`SKILL.md` as `projectInstructions` when present, so fixes follow existing project conventions
 - retest only after review returns `APPROVED`
 - Agent Skills compatible metadata and instructions

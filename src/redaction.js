@@ -1,14 +1,6 @@
 const REDACTED = '[REDACTED]';
 const SENSITIVE_KEYS = /^(authorization|proxy-authorization|cookie|set-cookie|password|passwd|secret|token|access[_-]?token|refresh[_-]?token|api[_-]?key|client[_-]?secret)$/i;
 
-export function redactHeaders(headers = {}) {
-  return redactValue(headers);
-}
-
-export function redactRequest(request) {
-  return redactValue(request);
-}
-
 export function redactAuth(auth) {
   if (!auth) return auth;
   const { response: _response, ...safe } = auth;

@@ -13,6 +13,13 @@ test('refuses production API lifecycle', () => {
   assert.doesNotThrow(() => assertSafeEnvironment('Development'));
 });
 
+test('only allowlists Development/Test, not just anything that is not literally "production"', () => {
+  assert.doesNotThrow(() => assertSafeEnvironment('test'));
+  assert.doesNotThrow(() => assertSafeEnvironment(' Development '));
+  assert.throws(() => assertSafeEnvironment('Staging'), /refuses/);
+  assert.throws(() => assertSafeEnvironment('production '), /refuses/);
+});
+
 test('persists and reads structured run artifacts', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'testloop-store-'));
   const store = await new ArtifactStore(root, 'run-1').initialize({ mode: 'standard' });

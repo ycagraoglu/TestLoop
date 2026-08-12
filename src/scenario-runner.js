@@ -1,10 +1,11 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { acquireFixture } from './fixture-acquisition.js';
+import { resolveAuthContext } from './auth.js';
 import { buildFixturePlan } from './fixture-planner.js';
 import { executeHttp } from './http.js';
 import { capturePaths, interpolatePath } from './object-path.js';
-import { redactRequest, redactValue } from './redaction.js';
+import { redactValue } from './redaction.js';
 import { runRole } from './role-runner.js';
 import { expectedStatusesFor } from './verification-config.js';
 import { classifyExecution } from './workflow.js';
@@ -44,8 +45,7 @@ async function resolveFixtures(scenario, context) {
       outputs: context.outputs,
       securityPolicy: context.securityPolicy,
       entityCache: context.entityCache,
-      maxCreationDepth: context.maxCreationDepth,
-      createEntity: context.createEntity
+      maxCreationDepth: context.maxCreationDepth
     });
     if (acquired.verified) fixtures[requirement.property] = acquired;
   }
@@ -58,10 +58,13 @@ function createFixturePlan(scenario, reusableFixtures) {
 }
 
 function createRequest(scenario, context, body) {
-  const rawUrl = new URL(scenario.path, context.config.baseUrl).toString();
+  // Interpolate {scenario.captured} placeholders on the raw path template BEFORE handing it to
+  // URL(): the URL parser percent-encodes literal { and } on the way in, so a placeholder search
+  // run afterward on the constructed URL string would never find anything to replace.
+  const interpolatedPath = interpolatePath(scenario.path, { ...context.outputs, ...(scenario.pathParameters ?? {}) });
   return {
     method: scenario.method,
-    url: interpolatePath(rawUrl, { ...context.outputs, ...(scenario.pathParameters ?? {}) }),
+    url: new URL(interpolatedPath, context.config.baseUrl).toString(),
     headers: { ...context.auth.headers, ...(scenario.headers ?? {}) },
     body
   };
@@ -74,7 +77,7 @@ async function executeRequest(request, scenario, context, persistRequest) {
     purpose: 'scenario'
   });
   const name = persistRequest ? `${scenario.id}.execution.json` : `${scenario.id}.retest.json`;
-  const artifact = persistRequest ? { request: redactRequest(request), response: redactValue(response) } : redactValue(response);
+  const artifact = persistRequest ? { request: redactValue(request), response: redactValue(response) } : redactValue(response);
   await context.store.write(name, artifact);
   return response;
 }
@@ -84,9 +87,22 @@ async function handleFailure({ scenario, request, response, fixturePlan, classif
     return { id: scenario.id, status: classification === 'INCONCLUSIVE' ? 'BLOCKED' : 'FAIL', classification, response, reason: `Unexpected HTTP ${response.status}.` };
   }
 
-  const diagnosis = await runAndStoreRole('diagnose', scenario, { scenario, request: redactRequest(request), response: redactValue(response), fixturePlan: redactValue(fixturePlan) }, context);
+  const diagnosis = await runAndStoreRole('diagnose', scenario, { scenario, request: redactValue(request), response: redactValue(response), fixturePlan: redactValue(fixturePlan) }, context);
   if (diagnosis.status !== 'APPLICATION_BUG') {
-    return { id: scenario.id, status: diagnosis.status === 'EXPECTED_REJECTION' ? 'PASS' : 'BLOCKED', classification: diagnosis.status, response, diagnosis };
+    return { id: scenario.id, status: diagnosisResultStatus(diagnosis.status), classification: diagnosis.status, response, diagnosis };
+  }
+
+  // smoke reports defects, it never repairs them, so it stops short of both the approval gate
+  // and the fix chain.
+  if (context.config.mode === 'smoke') {
+    return {
+      id: scenario.id,
+      status: 'FAIL',
+      classification: diagnosis.status,
+      response,
+      diagnosis,
+      reason: 'Confirmed application bug. smoke mode reports defects without repairing them.'
+    };
   }
 
   // By default a confirmed application defect stops the run here: TestLoop never invokes the fix role
@@ -117,9 +133,13 @@ export async function runApprovedFix({ scenario, diagnosis, request, expectedSta
   const review = await runAndStoreRole('review', scenario, { scenario, diagnosis, fix }, context);
   if (review.status !== 'APPROVED') return { id: scenario.id, status: 'ESCALATED', diagnosis, fix, review };
 
-  const retest = await executeRequest(request, scenario, context, false);
+  // Re-resolve auth here rather than trusting the caller's `request`: fix + review can be slow,
+  // real external agent calls, and a short-lived token captured before diagnosis may have expired.
+  const auth = await resolveAuthContext(context.config.auth ?? { type: 'none' }, context.securityPolicy);
+  const retestRequest = { ...request, headers: { ...request.headers, ...auth.headers } };
+  const retest = await executeRequest(retestRequest, scenario, context, false);
   return expectedStatuses.includes(retest.status)
-    ? { id: scenario.id, status: 'PASS', classification: 'PASS_AFTER_FIX', response: retest, diagnosis, fix, review }
+    ? { id: scenario.id, status: 'PASS', classification: 'PASS_AFTER_FIX', response: retest, diagnosis, fix, review, output: capturePaths(retest.body, scenario.capture) }
     : { id: scenario.id, status: 'FAIL', classification: 'RETEST_FAILED', response: retest, diagnosis, fix, review };
 }
 
@@ -137,6 +157,15 @@ async function runAndStoreRole(role, scenario, input, context) {
   const result = await runRole(role, input, context.config.roles, context.securityPolicy);
   await context.store.write(`${scenario.id}.${role}.json`, redactValue(result));
   return result;
+}
+
+// A diagnosis that is not APPLICATION_BUG ends the scenario without repair. EXPECTED_REJECTION means
+// the API was right to refuse; SPEC_MISMATCH is a reportable finding in its own right (docs: REPORT);
+// everything else means the evidence could not support a verdict, which is BLOCKED, never FAIL.
+function diagnosisResultStatus(status) {
+  if (status === 'EXPECTED_REJECTION') return 'PASS';
+  if (status === 'SPEC_MISMATCH') return 'SPEC_MISMATCH';
+  return 'BLOCKED';
 }
 
 function blockedScenario(scenario, fixturePlan) {

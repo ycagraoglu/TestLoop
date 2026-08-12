@@ -1,109 +1,28 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://testloop.dev/schemas/workflow-result.schema.json",
-  "title": "TestLoop Workflow Result",
+  "title": "TestLoop role result",
+  "description": "The JSON object a diagnose, fix, or review role adapter writes to stdout. TestLoop enforces the per-role status enums below; the remaining fields are the documented evidence shape from agents/.",
   "type": "object",
-  "additionalProperties": false,
-  "required": [
-    "runId",
-    "taskId",
-    "role",
-    "state",
-    "status",
-    "summary",
-    "evidence",
-    "artifacts",
-    "blockingReasons"
-  ],
+  "required": ["status"],
   "properties": {
-    "runId": {
-      "type": "string",
-      "minLength": 1
+    "status": { "type": "string" },
+    "summary": { "type": "string" },
+    "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+    "evidence": { "type": "array", "items": { "type": "string" } },
+    "affectedFiles": { "type": "array", "items": { "type": "string" } },
+    "changedFiles": { "type": "array", "items": { "type": "string" } },
+    "checks": { "type": "array", "items": { "type": "string" } },
+    "diffEvidence": { "type": "array", "items": { "type": "string" } },
+    "findings": { "type": "array" },
+    "requiredChecks": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "diagnoseStatus": {
+      "enum": ["FIXTURE_ERROR", "AUTH_ERROR", "ENVIRONMENT_ERROR", "EXPECTED_REJECTION", "SPEC_MISMATCH", "APPLICATION_BUG", "INCONCLUSIVE"]
     },
-    "taskId": {
-      "type": "string",
-      "minLength": 1
-    },
-    "role": {
-      "type": "string",
-      "enum": [
-        "coordinator",
-        "test-analyst",
-        "failure-diagnostician",
-        "bugfix-agent",
-        "review-agent"
-      ]
-    },
-    "state": {
-      "type": "string",
-      "enum": [
-        "DISCOVER",
-        "PLAN",
-        "RESOLVE_FIXTURES",
-        "PREPARE_AUTH",
-        "GENERATE_REQUEST",
-        "EXECUTE",
-        "VERIFY",
-        "DIAGNOSE",
-        "AWAITING_APPROVAL",
-        "FIX",
-        "REVIEW",
-        "RETEST",
-        "COMPLETE",
-        "REPORT",
-        "SKIPPED",
-        "ESCALATED"
-      ]
-    },
-    "status": {
-      "type": "string",
-      "enum": [
-        "SUCCESS",
-        "PASS",
-        "FAIL",
-        "BLOCKED",
-        "EXPECTED_REJECTION",
-        "SPEC_MISMATCH",
-        "APPLICATION_BUG",
-        "INCONCLUSIVE",
-        "APPROVED",
-        "CHANGES_REQUESTED",
-        "ESCALATED"
-      ]
-    },
-    "summary": {
-      "type": "string",
-      "minLength": 1
-    },
-    "evidence": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true
-      }
-    },
-    "artifacts": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "minLength": 1
-      },
-      "uniqueItems": true
-    },
-    "blockingReasons": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "minLength": 1
-      }
-    },
-    "nextRecommendedState": {
-      "type": ["string", "null"]
-    },
-    "confidence": {
-      "type": ["number", "null"],
-      "minimum": 0,
-      "maximum": 1
-    }
+    "fixStatus": { "enum": ["SUCCESS", "FAILURE"] },
+    "reviewStatus": { "enum": ["APPROVED", "CHANGES_REQUESTED", "REJECTED"] }
   }
 }
