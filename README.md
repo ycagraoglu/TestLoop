@@ -2,7 +2,7 @@
 
 **Test it. Fix it. Verify it.**
 
-TestLoop is an agent-native verification workflow for ASP.NET Core Web APIs. It discovers endpoints, resolves valid fixtures, executes real HTTP requests, classifies failures, delegates confirmed defects to independent diagnosis/fix/review roles, and retests only after approval.
+TestLoop is an agent-native verification workflow for ASP.NET Core Web APIs. It discovers endpoints, resolves valid fixtures, executes real HTTP requests, classifies failures, and pauses a confirmed defect for explicit human approval before delegating it to independent diagnosis/fix/review roles and retesting.
 
 TestLoop includes an [Agent Skills](https://agentskills.io/) compatible skill at `skills/testloop/SKILL.md` and a deterministic CLI that performs the underlying project analysis and test execution.
 
@@ -16,13 +16,15 @@ An endpoint is never marked as failed until authentication, persisted dependenci
 - ASP.NET Core controller, route, action, DTO, authorization, FluentValidation, entity, and EF Core FK analysis
 - OpenAPI operation inventory and feature-oriented test planning
 - deterministic payload generation
-- verified fixture acquisition from static evidence, workflow outputs, and safe HTTP list endpoints
+- verified fixture acquisition from static evidence, workflow outputs, safe HTTP list endpoints, and cycle-limited create-if-missing entities (`ensure-entity`)
 - JWT bearer and login-based authentication contexts
 - real HTTP execution with structured evidence
 - persisted `.testloop/runs/<run-id>` artifacts
 - safe `dotnet build` and Development/Test API process lifecycle
 - gated workflow state, classification, retry budgets, and agent-call budgets
 - external diagnosis, bugfix, and independent review role adapters
+- confirmed application bugs pause at `AWAITING_APPROVAL` by default; the fix role only runs after `testloop resume ... approve` (or immediately when `requireApproval: false`), and a decline ends the scenario as `SKIPPED`
+- the fix role receives the target project's own root-level `AGENTS.md`/`SKILL.md` as `projectInstructions` when present, so fixes follow existing project conventions
 - retest only after review returns `APPROVED`
 - Agent Skills compatible metadata and instructions
 - Claude-style plugin metadata, role prompts, schemas, and configuration template
@@ -71,6 +73,8 @@ testloop plan http://127.0.0.1:5099/swagger/v1/swagger.json . standard
 testloop build ./src/MyApi/MyApi.csproj
 testloop serve ./src/MyApi/MyApi.csproj http://127.0.0.1:5099 Development
 testloop run ./testloop.config.json
+testloop resume <run-id> <scenario-id> approve
+testloop resume <run-id> <scenario-id> decline
 ```
 
 Copy `templates/testloop.config.example.json` and adapt it to the target API. Run evidence is written under `.testloop/runs`.
@@ -129,8 +133,11 @@ TestLoop does deterministic work itself. Expensive agent roles are called only f
 
 Role contracts are documented in `agents/`. The fix and review roles must not be the same session.
 
+When the target project (`root`) has a root-level `AGENTS.md` or `SKILL.md`, its content is passed to the fix role as `projectInstructions` so fixes follow that project's own conventions.
+
 ## Safety
 
+- A confirmed application bug never reaches the fix role without an explicit `testloop resume <run-id> <scenario-id> approve`, unless `requireApproval: false` opts into immediate fixing; declining (when gated) marks the scenario `SKIPPED`.
 - Production process startup is refused.
 - Persisted IDs are never randomly generated.
 - Supplied foreign keys still require verification evidence.

@@ -11,6 +11,8 @@
     "baseUrl": { "type": "string", "format": "uri" },
     "timeoutMs": { "type": "integer", "minimum": 100, "maximum": 300000 },
     "stopOnFailure": { "type": "boolean" },
+    "requireApproval": { "type": "boolean" },
+    "maxCreationDepth": { "type": "integer", "minimum": 0, "maximum": 10 },
     "security": {
       "type": "object",
       "properties": {

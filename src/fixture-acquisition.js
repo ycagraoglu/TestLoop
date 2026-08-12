@@ -5,7 +5,8 @@ import { readPath } from './object-path.js';
 const SOURCE_RESOLVERS = Object.freeze({
   static: resolveStatic,
   'workflow-output': resolveWorkflowOutput,
-  'http-list': resolveHttpList
+  'http-list': resolveHttpList,
+  'ensure-entity': resolveEnsureEntity
 });
 
 export async function acquireFixture(requirement, sources, context = {}) {
@@ -61,6 +62,66 @@ async function resolveHttpList(requirement, source, context) {
     `candidate:${idProperty}`,
     ...(source.predicates ?? []).map(predicate => `predicate:${predicate.property}:${predicate.operator}`)
   ]);
+}
+
+async function resolveEnsureEntity(requirement, source, context) {
+  const cacheKey = source.cacheKey ?? requirement.entity ?? requirement.property;
+  const cache = context.entityCache instanceof Map ? context.entityCache : null;
+  if (cache?.has(cacheKey)) return cache.get(cacheKey);
+
+  const listed = source.list ? await resolveHttpList(requirement, source.list, context) : null;
+  if (listed) {
+    cache?.set(cacheKey, listed);
+    return listed;
+  }
+
+  if (!source.create) return null;
+
+  const depth = context.creationDepth ?? 0;
+  const maxDepth = context.maxCreationDepth ?? 3;
+  if (depth >= maxDepth) {
+    throw new Error(`Fixture creation depth limit (${maxDepth}) exceeded while ensuring ${requirement.entity ?? requirement.property}; check for a dependency cycle.`);
+  }
+
+  const creator = typeof context.createEntity === 'function' ? context.createEntity : defaultCreateEntity;
+  const created = await creator(source.create, { ...context, creationDepth: depth + 1 });
+  if (!created?.verified) return null;
+
+  const result = fixture(
+    requirement,
+    created.value,
+    created.source ?? 'ensure-entity:created',
+    created.evidence ?? [`created ${requirement.entity ?? requirement.property} because no verified candidate existed`]
+  );
+  cache?.set(cacheKey, result);
+  return result;
+}
+
+async function defaultCreateEntity(createSpec, context) {
+  const response = await executeHttp({
+    method: createSpec.method ?? 'POST',
+    url: createSpec.url,
+    headers: { ...(context.headers ?? {}), ...(createSpec.headers ?? {}) },
+    body: createSpec.body
+  }, {
+    securityPolicy: context.securityPolicy,
+    purpose: 'fixture creation'
+  });
+
+  if (!response.ok) {
+    return { verified: false, reason: `Fixture creation request failed with HTTP ${response.status}.` };
+  }
+
+  const idPath = createSpec.idProperty ?? 'id';
+  const value = readPath(response.body, idPath);
+  if (value === undefined) return { verified: false, reason: `Created entity response did not contain ${idPath}.` };
+
+  return {
+    verified: true,
+    value,
+    source: `ensure-entity:create:${createSpec.url}`,
+    evidence: [`HTTP ${response.status}`, `created via ${createSpec.method ?? 'POST'} ${createSpec.url}`]
+  };
 }
 
 function fixture(requirement, value, source, evidence) {

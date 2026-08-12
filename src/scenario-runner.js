@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { acquireFixture } from './fixture-acquisition.js';
 import { buildFixturePlan } from './fixture-planner.js';
 import { executeHttp } from './http.js';
@@ -40,7 +42,10 @@ async function resolveFixtures(scenario, context) {
     const acquired = await acquireFixture(requirement, sources, {
       headers: context.auth.headers,
       outputs: context.outputs,
-      securityPolicy: context.securityPolicy
+      securityPolicy: context.securityPolicy,
+      entityCache: context.entityCache,
+      maxCreationDepth: context.maxCreationDepth,
+      createEntity: context.createEntity
     });
     if (acquired.verified) fixtures[requirement.property] = acquired;
   }
@@ -84,7 +89,29 @@ async function handleFailure({ scenario, request, response, fixturePlan, classif
     return { id: scenario.id, status: diagnosis.status === 'EXPECTED_REJECTION' ? 'PASS' : 'BLOCKED', classification: diagnosis.status, response, diagnosis };
   }
 
-  const fix = await runAndStoreRole('fix', scenario, { scenario, diagnosis }, context);
+  // By default a confirmed application defect stops the run here: TestLoop never invokes the fix role
+  // on its own initiative. A human must approve via `testloop resume <run-id> <scenario-id> approve`
+  // (or decline it, which marks the scenario SKIPPED) before the fix/review/retest chain continues.
+  // Setting `requireApproval: false` opts out of the gate and fixes immediately.
+  if (context.config.requireApproval === false) {
+    return runApprovedFix({ scenario, diagnosis, request, expectedStatuses, context });
+  }
+
+  await context.store.write(`${scenario.id}.resume-state.json`, { request, expectedStatuses });
+  return {
+    id: scenario.id,
+    status: 'AWAITING_APPROVAL',
+    classification: diagnosis.status,
+    response,
+    diagnosis,
+    reason: 'Confirmed application bug. Awaiting human approval before invoking the fix agent.',
+    resumeHint: `testloop resume <run-id> ${scenario.id} approve|decline`
+  };
+}
+
+export async function runApprovedFix({ scenario, diagnosis, request, expectedStatuses, context }) {
+  const projectInstructions = await readProjectInstructions(context.config.root ?? process.cwd());
+  const fix = await runAndStoreRole('fix', scenario, { scenario, diagnosis, projectInstructions }, context);
   if (fix.status !== 'SUCCESS') return { id: scenario.id, status: 'ESCALATED', diagnosis, fix };
 
   const review = await runAndStoreRole('review', scenario, { scenario, diagnosis, fix }, context);
@@ -94,6 +121,16 @@ async function handleFailure({ scenario, request, response, fixturePlan, classif
   return expectedStatuses.includes(retest.status)
     ? { id: scenario.id, status: 'PASS', classification: 'PASS_AFTER_FIX', response: retest, diagnosis, fix, review }
     : { id: scenario.id, status: 'FAIL', classification: 'RETEST_FAILED', response: retest, diagnosis, fix, review };
+}
+
+// ponytail: root-level only, no nested skills/*/SKILL.md scan; broaden if projects keep rules elsewhere.
+async function readProjectInstructions(root) {
+  const found = await Promise.all(['AGENTS.md', 'SKILL.md'].map(async file => {
+    try { return { file, content: await readFile(path.join(root, file), 'utf8') }; }
+    catch { return null; }
+  }));
+  const present = found.filter(Boolean);
+  return present.length > 0 ? present : null;
 }
 
 async function runAndStoreRole(role, scenario, input, context) {

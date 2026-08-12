@@ -6,6 +6,7 @@ import { executeHttp } from '../src/http.js';
 import { listOperations, loadOpenApi } from '../src/openapi.js';
 import { runVerification } from '../src/orchestrator.js';
 import { buildProject, startApi } from '../src/process-manager.js';
+import { resumeVerification } from '../src/resume.js';
 import { analyzeAspNetSource } from '../src/source-analyzer.js';
 import { buildTestPlan } from '../src/test-planner.js';
 import { createWorkflowState, transitionWorkflow } from '../src/workflow.js';
@@ -68,6 +69,14 @@ try {
       print(await runVerification(config, { store: new ArtifactStore(config.root ?? process.cwd(), config.runId) }));
       break;
     }
+    case 'resume': {
+      const runId = required(args[0], 'Run ID');
+      const scenarioId = required(args[1], 'Scenario ID');
+      const decision = required(args[2], 'Decision (approve|decline)').toLowerCase();
+      const root = args[3] ?? process.cwd();
+      print(await resumeVerification({ root, runId, scenarioId, decision }));
+      break;
+    }
     case 'workflow': {
       const runId = required(args[0], 'Run ID');
       const target = required(args[1], 'Target');
@@ -98,5 +107,5 @@ function required(value, name) {
 }
 
 function printHelp() {
-  console.log(`TestLoop\n\nCommands:\n  testloop discover [root]\n  testloop analyze [root]\n  testloop openapi <url>\n  testloop plan <openapi-url> [root] [mode]\n  testloop request <method> <url> [json-body]\n  testloop build <project-path>\n  testloop serve <project-path> [url] [environment]\n  testloop run <testloop.config.json>\n  testloop workflow <run-id> <target> [outcomes...]\n`);
+  console.log(`TestLoop\n\nCommands:\n  testloop discover [root]\n  testloop analyze [root]\n  testloop openapi <url>\n  testloop plan <openapi-url> [root] [mode]\n  testloop request <method> <url> [json-body]\n  testloop build <project-path>\n  testloop serve <project-path> [url] [environment]\n  testloop run <testloop.config.json>\n  testloop resume <run-id> <scenario-id> <approve|decline> [root]\n  testloop workflow <run-id> <target> [outcomes...]\n`);
 }

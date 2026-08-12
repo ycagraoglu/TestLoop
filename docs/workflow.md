@@ -29,6 +29,10 @@ VERIFY
   ├─ INCONCLUSIVE ─────────────────────→ REPORT
   └─ APPLICATION_BUG
              ↓
+      AWAITING_APPROVAL
+  ├─ DECLINED ──────────────────────────→ SKIPPED
+  └─ APPROVED
+             ↓
             FIX
              ↓ SUCCESS
            REVIEW
@@ -74,6 +78,27 @@ An HTTP error is not an application defect by itself. `APPLICATION_BUG` requires
 - declared validation constraints are satisfied;
 - environment dependencies are healthy;
 - the response remains unexpected after reproducible execution.
+
+## Human approval gate
+
+By default, a confirmed `APPLICATION_BUG` never invokes the fix role on its own initiative. The
+workflow stops at `AWAITING_APPROVAL` and persists the pending request; a human must resume it
+explicitly:
+
+```bash
+testloop resume <run-id> <scenario-id> approve
+testloop resume <run-id> <scenario-id> decline
+```
+
+`approve` re-authenticates, replays the original request through the fix/review/retest chain. `decline`
+ends the scenario as `SKIPPED` and never calls the fix role. This gate is separate from, and precedes,
+the review gate below.
+
+Setting `requireApproval: false` in the run config removes this gate: `DIAGNOSE` goes straight to `FIX`
+on `APPLICATION_BUG`, in the same process, with no `testloop resume` step.
+
+Either way, the fix role receives `projectInstructions`: the contents of the target project's own
+root-level `AGENTS.md` and/or `SKILL.md`, when present, so the fix follows that project's conventions.
 
 ## Review gate
 

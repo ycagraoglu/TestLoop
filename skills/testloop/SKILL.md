@@ -45,6 +45,7 @@ testloop plan <openapi-url> <project-path> <smoke|standard|deep>
 testloop build <project-file>
 testloop serve <project-file> <base-url> <Development|Test>
 testloop run <config-file>
+testloop resume <run-id> <scenario-id> <approve|decline>
 ```
 
 Do not invent command flags. When an interface is unclear, run `testloop --help` and use the documented command shape. TestLoop commands must not wait for interactive secrets or confirmations; provide required values through configuration, environment variables, or an already authenticated local tool.
@@ -55,12 +56,13 @@ Do not invent command flags. When an interface is unclear, run `testloop --help`
 2. Never invent a random persisted foreign key merely to complete a request.
 3. Treat HTTP 4xx and 5xx responses as evidence, not automatic proof of an application bug.
 4. Do not modify source code before diagnosis classifies the result as `APPLICATION_BUG`.
-5. The agent that implements a fix must not approve its own fix.
-6. Do not begin retesting before review returns `APPROVED`.
-7. Do not weaken validation, authorization, tenant isolation, or ownership checks to make a test pass.
-8. Do not run destructive or externally visible operations against production.
-9. Preserve reproducible requests, responses, logs, fixture proofs, diffs, and review decisions.
-10. Respect workflow and token budgets; escalate instead of looping indefinitely.
+5. Never invoke the fix role for a confirmed `APPLICATION_BUG` without explicit human approval via `testloop resume <run-id> <scenario-id> approve`, unless the run config sets `requireApproval: false`. When gated, a decline ends the scenario as `SKIPPED`, not a silent retry.
+6. The agent that implements a fix must not approve its own fix.
+7. Do not begin retesting before review returns `APPROVED`.
+8. Do not weaken validation, authorization, tenant isolation, or ownership checks to make a test pass.
+9. Do not run destructive or externally visible operations against production.
+10. Preserve reproducible requests, responses, logs, fixture proofs, diffs, and review decisions.
+11. Respect workflow and token budgets; escalate instead of looping indefinitely.
 
 ## Supported MVP profile
 
@@ -109,7 +111,11 @@ DIAGNOSE
   ├─ expected rejection → COMPLETE
   ├─ specification mismatch → REPORT
   ├─ inconclusive → REPORT
-  └─ confirmed application bug → FIX → REVIEW → RETEST
+  └─ confirmed application bug
+        ├─ requireApproval: false → FIX → REVIEW → RETEST
+        └─ default (gated) → AWAITING_APPROVAL
+              ├─ human declines → SKIPPED
+              └─ human approves (`testloop resume ... approve`) → FIX → REVIEW → RETEST
 ```
 
 ## Efficient agent use
@@ -149,14 +155,17 @@ Return one of:
 - `EXPECTED_REJECTION`
 - `SPEC_MISMATCH`
 - `INCONCLUSIVE`
+- `AWAITING_APPROVAL`
+- `SKIPPED`
 - `ESCALATED`
 
-Only `APPLICATION_BUG` diagnosis with verified preconditions may lead to source modification.
+Only `APPLICATION_BUG` diagnosis with verified preconditions may lead to source modification, and only after a human approves the `AWAITING_APPROVAL` gate via `testloop resume`.
 
 ## Repair rules
 
 A fix must:
 
+- follow the target project's own `AGENTS.md`/`SKILL.md` conventions when present (passed to the fix role as `projectInstructions`);
 - target the root cause;
 - use the smallest safe diff;
 - avoid unrelated refactoring;

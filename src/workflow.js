@@ -6,11 +6,13 @@ export const STATES = Object.freeze({
   EXECUTE: 'EXECUTE',
   VERIFY: 'VERIFY',
   DIAGNOSE: 'DIAGNOSE',
+  AWAITING_APPROVAL: 'AWAITING_APPROVAL',
   FIX: 'FIX',
   REVIEW: 'REVIEW',
   RETEST: 'RETEST',
   COMPLETE: 'COMPLETE',
   BLOCKED: 'BLOCKED',
+  SKIPPED: 'SKIPPED',
   ESCALATED: 'ESCALATED'
 });
 
@@ -26,9 +28,10 @@ const TRANSITIONS = Object.freeze({
     AUTH_ERROR: 'RESOLVE_FIXTURES',
     ENVIRONMENT_ERROR: 'BLOCKED',
     EXPECTED_REJECTION: 'COMPLETE',
-    APPLICATION_BUG: 'FIX',
+    APPLICATION_BUG: 'AWAITING_APPROVAL',
     INCONCLUSIVE: 'BLOCKED'
   },
+  AWAITING_APPROVAL: { APPROVED: 'FIX', DECLINED: 'SKIPPED' },
   FIX: { SUCCESS: 'REVIEW', FAILURE: 'ESCALATED' },
   REVIEW: { APPROVED: 'RETEST', CHANGES_REQUESTED: 'FIX', REJECTED: 'ESCALATED' },
   RETEST: { PASS: 'COMPLETE', FAILURE: 'DIAGNOSE', BLOCKED: 'BLOCKED' }
@@ -104,12 +107,14 @@ function terminalStatus(state) {
   if (state === STATES.COMPLETE) return 'COMPLETE';
   if (state === STATES.BLOCKED) return 'BLOCKED';
   if (state === STATES.ESCALATED) return 'ESCALATED';
+  if (state === STATES.SKIPPED) return 'SKIPPED';
+  if (state === STATES.AWAITING_APPROVAL) return 'AWAITING_APPROVAL';
   return 'RUNNING';
 }
 
 function assertWorkflow(workflow) {
   if (!workflow || !TRANSITIONS[workflow.state]) {
-    if ([STATES.COMPLETE, STATES.BLOCKED, STATES.ESCALATED].includes(workflow?.state)) throw new Error(`Workflow is terminal: ${workflow.state}`);
+    if ([STATES.COMPLETE, STATES.BLOCKED, STATES.ESCALATED, STATES.SKIPPED].includes(workflow?.state)) throw new Error(`Workflow is terminal: ${workflow.state}`);
     throw new Error('Invalid workflow state.');
   }
 }

@@ -45,11 +45,13 @@
         "EXECUTE",
         "VERIFY",
         "DIAGNOSE",
+        "AWAITING_APPROVAL",
         "FIX",
         "REVIEW",
         "RETEST",
         "COMPLETE",
         "REPORT",
+        "SKIPPED",
         "ESCALATED"
       ]
     },
