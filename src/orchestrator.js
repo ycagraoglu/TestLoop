@@ -1,6 +1,6 @@
 import { ArtifactStore } from './artifact-store.js';
 import { resolveAuthContext } from './auth.js';
-import { redactAuth } from './redaction.js';
+import { redactAuth, redactConfig } from './redaction.js';
 import { runScenario } from './scenario-runner.js';
 import { createSecurityPolicy } from './security-policy.js';
 import { validateVerificationConfig } from './verification-config.js';
@@ -11,9 +11,9 @@ export async function runVerification(config, dependencies = {}) {
   const securityPolicy = createSecurityPolicy(config.security);
   const store = dependencies.store ?? new ArtifactStore(config.root ?? process.cwd(), config.runId);
   await store.initialize({ mode: config.mode ?? 'standard', baseUrl: config.baseUrl });
-  // Persisted verbatim (not redacted) so `testloop resume` can reload it in a later process.
-  // No inline secrets should ever be present here: auth bodies must use `{ "$env": "..." }` references.
-  await store.write('config.json', config);
+  // Persisted so `testloop resume` can reload it in a later process. `{ "$env": "..." }` pointers
+  // survive; anything literal under a sensitive key is stripped before it reaches disk.
+  await store.write('config.json', redactConfig(config));
 
   const auth = await resolveAuthContext(config.auth ?? { type: 'none' }, securityPolicy);
   await store.write('auth.json', redactAuth(auth));

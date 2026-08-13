@@ -138,6 +138,8 @@ When the target project (`root`) has a root-level `AGENTS.md` or `SKILL.md`, its
 ## Safety
 
 - A confirmed application bug never reaches the fix role without an explicit `testloop resume <run-id> <scenario-id> approve`, unless `requireApproval: false` opts into immediate fixing; declining (when gated) marks the scenario `SKIPPED`.
+- Credentials live in the environment, never in the config: a run whose `auth` holds an inline secret is refused, and `{ "$env": "NAME" }` pointers are resolved in memory. Persisted artifacts keep the pointer and never the value.
+- An authentication failure mid-run is reported as `BLOCKED` / `AUTH_ERROR`, never as a test failure or an application bug.
 - Production process startup is refused.
 - Persisted IDs are never randomly generated.
 - Supplied foreign keys still require verification evidence.

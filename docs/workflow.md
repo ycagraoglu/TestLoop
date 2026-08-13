@@ -113,6 +113,21 @@ never invoked, with or without `requireApproval`.
 Either way, the fix role receives `projectInstructions`: the contents of the target project's own
 root-level `AGENTS.md` and/or `SKILL.md`, when present, so the fix follows that project's conventions.
 
+## Credentials
+
+`auth.type: "login"` posts the configured body to the token endpoint and attaches the resulting JWT
+to every later request, including fixture lookups. `auth.type: "bearer"` reads an existing token from
+`tokenEnv`. Either way the secret comes from the environment: a config holding an inline credential is
+refused before the run creates any artifact, and `{ "$env": "NAME" }` pointers are resolved in memory
+only. The persisted `config.json` keeps the pointer so `resume` can re-authenticate; `auth.json` keeps
+the evidence but redacts the token and drops the login response entirely.
+
+If the token endpoint fails or the token is missing at `tokenPath`, the run ends `BLOCKED` without
+executing a single scenario. A 401 or 403 *during* a scenario is classified `AUTH_ERROR` and reported
+as `BLOCKED` — unless the scenario expected that status, which is a `PASS` (deep mode asserts 401/403
+on purpose for role and tenant checks). There is no token refresh mid-run; authentication is resolved
+once per run and again immediately before a retest.
+
 ## Retest scope
 
 The retest replays the original request against whatever is listening on `baseUrl`. TestLoop rebuilds

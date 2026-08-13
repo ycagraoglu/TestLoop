@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import test from 'node:test';
 import { executeHttp } from '../src/http.js';
-import { redactValue } from '../src/redaction.js';
+import { redactConfig, redactValue } from '../src/redaction.js';
+import { validateVerificationConfig } from '../src/verification-config.js';
 import { assertAllowedCommand, assertAllowedUrl, buildRestrictedEnvironment, createSecurityPolicy } from '../src/security-policy.js';
 
 const lockedPolicy = createSecurityPolicy({ allowedHosts: ['api.example.com'], allowedCommands: ['node'] });
@@ -64,4 +65,31 @@ test('bounds memory for a chunked response with no content-length, instead of bu
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
+});
+
+test('keeps $env pointers in the persisted config but never a literal secret', () => {
+  const config = {
+    auth: { type: 'login', url: 'https://api.example.com/token', body: { email: { $env: 'LOGIN_EMAIL' }, password: { $env: 'LOGIN_PASSWORD' } } },
+    scenarios: [{ id: 'x', headers: { authorization: 'Bearer leaked-literal' }, body: { name: 'Widget', apiKey: 'literal-key' } }]
+  };
+  const persisted = redactConfig(config);
+
+  assert.deepEqual(persisted.auth.body.password, { $env: 'LOGIN_PASSWORD' }, 'resume needs the pointer to survive');
+  assert.deepEqual(persisted.auth.body.email, { $env: 'LOGIN_EMAIL' });
+  assert.equal(persisted.scenarios[0].headers.authorization, '[REDACTED]');
+  assert.equal(persisted.scenarios[0].body.apiKey, '[REDACTED]');
+  assert.equal(persisted.scenarios[0].body.name, 'Widget', 'non-secret fields stay readable as evidence');
+  assert.equal(JSON.stringify(persisted).includes('leaked-literal'), false);
+  assert.equal(JSON.stringify(persisted).includes('literal-key'), false);
+});
+
+test('refuses a run configured with an inline credential', () => {
+  const base = { baseUrl: 'http://localhost', scenarios: [{ id: 'x', method: 'GET', path: '/x' }] };
+  assert.throws(
+    () => validateVerificationConfig({ ...base, auth: { type: 'login', url: 'http://localhost/token', body: { email: 'a@b.c', password: 'S3cret!' } } }),
+    /auth\.body\.password must not hold an inline secret/
+  );
+  assert.doesNotThrow(
+    () => validateVerificationConfig({ ...base, auth: { type: 'login', url: 'http://localhost/token', body: { email: 'a@b.c', password: { $env: 'PW' } } } })
+  );
 });

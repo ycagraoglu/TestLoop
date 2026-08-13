@@ -1,3 +1,4 @@
+import { resolveEnvironmentReferences } from './env-reference.js';
 import { executeHttp } from './http.js';
 import { readPath } from './object-path.js';
 
@@ -51,17 +52,6 @@ async function resolveLogin(config, securityPolicy) {
     evidence: [`login:${config.url}`, `token-path:${tokenPath}`],
     response
   };
-}
-
-function resolveEnvironmentReferences(value) {
-  if (Array.isArray(value)) return value.map(resolveEnvironmentReferences);
-  if (!value || typeof value !== 'object') return value;
-  if (Object.keys(value).length === 1 && typeof value.$env === 'string') {
-    const resolved = process.env[value.$env];
-    if (resolved === undefined) throw new Error(`Required environment variable is missing: ${value.$env}`);
-    return resolved;
-  }
-  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, resolveEnvironmentReferences(item)]));
 }
 
 function blocked(reason, extra = {}) {

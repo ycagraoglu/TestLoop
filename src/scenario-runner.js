@@ -36,7 +36,6 @@ export async function runScenario(scenario, context) {
     expectedStatuses,
     actualStatus: response.status,
     fixtureVerified: true,
-    authVerified: context.auth.type !== 'blocked',
     environmentHealthy: true
   });
 
@@ -96,7 +95,13 @@ async function executeRequest(request, scenario, context, persistRequest) {
 
 async function handleFailure({ scenario, request, response, fixturePlan, classification, expectedStatuses, context }) {
   if (classification !== 'APPLICATION_BUG' || !context.config.roles?.diagnose) {
-    return { id: scenario.id, status: classification === 'INCONCLUSIVE' ? 'BLOCKED' : 'FAIL', classification, response, reason: `Unexpected HTTP ${response.status}.` };
+    return {
+      id: scenario.id,
+      status: PRECONDITION_CLASSIFICATIONS.has(classification) ? 'BLOCKED' : 'FAIL',
+      classification,
+      response,
+      reason: failureReason(classification, response.status)
+    };
   }
 
   const diagnosis = await runAndStoreRole('diagnose', scenario, { scenario, request: redactValue(request), response: redactValue(response), fixturePlan: redactValue(fixturePlan) }, context);
@@ -169,6 +174,18 @@ async function runAndStoreRole(role, scenario, input, context) {
   const result = await runRole(role, input, context.config.roles, context.securityPolicy);
   await context.store.write(`${scenario.id}.${role}.json`, redactValue(result));
   return result;
+}
+
+// An unmet precondition is never the application's fault, so it is reported as BLOCKED rather than
+// as a failure. This is the trust rule: TestLoop says "I could not establish this" instead of
+// blaming code it never managed to exercise properly.
+const PRECONDITION_CLASSIFICATIONS = new Set(['AUTH_ERROR', 'FIXTURE_ERROR', 'ENVIRONMENT_ERROR', 'INCONCLUSIVE']);
+
+function failureReason(classification, status) {
+  if (classification === 'AUTH_ERROR') {
+    return `HTTP ${status} although the authentication context resolved successfully. The token may have expired mid-run, or it lacks the role or scope this endpoint requires.`;
+  }
+  return `Unexpected HTTP ${status}.`;
 }
 
 // A diagnosis that is not APPLICATION_BUG ends the scenario without repair. EXPECTED_REJECTION means

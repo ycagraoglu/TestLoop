@@ -1,3 +1,6 @@
+import { isEnvReference } from './env-reference.js';
+import { SENSITIVE_KEYS } from './redaction.js';
+
 const VALID_MODES = new Set(['smoke', 'standard', 'deep']);
 const VALID_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']);
 
@@ -19,8 +22,23 @@ export function validateVerificationConfig(config) {
     throw new Error('At least one scenario is required.');
   }
 
+  assertNoInlineSecrets(config.auth, 'auth');
   for (const scenario of config.scenarios) validateScenario(scenario);
   return config;
+}
+
+// Credentials belong in the environment, never in the run config: the config is read from a file,
+// committed, and copied between machines. Refused here rather than at login time, so the run stops
+// before it creates any artifact. Same stance the inline bearer token already takes.
+function assertNoInlineSecrets(value, pathLabel) {
+  if (!value || typeof value !== 'object') return;
+  for (const [key, item] of Object.entries(value)) {
+    const location = `${pathLabel}.${key}`;
+    if (SENSITIVE_KEYS.test(key) && !isEnvReference(item)) {
+      throw new Error(`${location} must not hold an inline secret. Use { "$env": "VARIABLE_NAME" } instead.`);
+    }
+    if (!isEnvReference(item)) assertNoInlineSecrets(item, location);
+  }
 }
 
 export function expectedStatusesFor(scenario) {

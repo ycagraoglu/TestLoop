@@ -100,12 +100,13 @@ test('runs login, verified fixture acquisition, request execution, and artifact 
     response.end('{}');
   }, async baseUrl => {
     const root = await mkdtemp(path.join(tmpdir(), 'testloop-e2e-'));
+    process.env.TESTLOOP_E2E_PASSWORD = 'b';
     const result = await runVerification({
       root,
       runId: 'e2e-run',
       baseUrl,
       security: { allowPrivateNetwork: true, allowedHosts: ['127.0.0.1'] },
-      auth: { type: 'login', url: `${baseUrl}/login`, body: { email: 'a', password: 'b' }, tokenPath: 'data.accessToken' },
+      auth: { type: 'login', url: `${baseUrl}/login`, body: { email: 'a', password: { $env: 'TESTLOOP_E2E_PASSWORD' } }, tokenPath: 'data.accessToken' },
       scenarios: [{
         id: 'create-product', method: 'POST', path: '/products', expectedStatuses: [201],
         requestModel: {
@@ -618,5 +619,79 @@ test('a declined scenario blocks its dependent instead of reporting a runner mal
     assert.equal(summary.results[1].status, 'BLOCKED', 'an unproduced dependency is an unmet precondition, not a runner error');
     assert.equal(summary.results[1].classification, 'UNRESOLVED_DEPENDENCY');
     assert.equal(summary.status, 'BLOCKED', 'nothing actually failed: a human chose to skip');
+  });
+});
+
+test('a mid-run 401 is an authentication problem, not a failure or a bug', async () => {
+  await withServer(async (request, response) => {
+    for await (const chunk of request) void chunk;
+    response.setHeader('content-type', 'application/json');
+    if (request.url === '/login') return response.end(JSON.stringify({ token: 'jwt-abc' }));
+    response.statusCode = 401;
+    response.end(JSON.stringify({ error: 'token expired' }));
+  }, async baseUrl => {
+    const root = await mkdtemp(path.join(tmpdir(), 'testloop-expired-'));
+    const result = await runVerification({
+      root,
+      runId: 'expired-run',
+      baseUrl,
+      security: { allowPrivateNetwork: true, allowedHosts: ['127.0.0.1'] },
+      auth: { type: 'login', url: `${baseUrl}/login`, body: {}, tokenPath: 'token' },
+      scenarios: [{ id: 'create-product', method: 'POST', path: '/products', expectedStatuses: [201], body: { name: 'Widget' } }]
+    });
+
+    assert.equal(result.results[0].status, 'BLOCKED', 'an auth problem is an unmet precondition, never a FAIL');
+    assert.equal(result.results[0].classification, 'AUTH_ERROR');
+    assert.match(result.results[0].reason, /expired mid-run|role or scope/);
+    assert.equal(result.status, 'BLOCKED');
+  });
+});
+
+test('a scenario that deliberately expects 403 still passes', async () => {
+  await withServer((request, response) => {
+    response.setHeader('content-type', 'application/json');
+    response.statusCode = 403;
+    response.end('{"error":"forbidden"}');
+  }, async baseUrl => {
+    const root = await mkdtemp(path.join(tmpdir(), 'testloop-negative-'));
+    const result = await runVerification({
+      root,
+      runId: 'negative-run',
+      baseUrl,
+      security: { allowPrivateNetwork: true, allowedHosts: ['127.0.0.1'] },
+      scenarios: [{ id: 'reader-cannot-delete', method: 'DELETE', path: '/products/1', expectedStatuses: [403] }]
+    });
+
+    assert.equal(result.status, 'PASS', 'deep mode role and tenant checks assert 401/403 on purpose');
+    assert.equal(result.results[0].classification, 'PASS');
+  });
+});
+
+test('never writes a literal credential into the persisted run config', async () => {
+  await withServer(async (request, response) => {
+    for await (const chunk of request) void chunk;
+    response.setHeader('content-type', 'application/json');
+    if (request.url === '/login') return response.end(JSON.stringify({ token: 'jwt-abc' }));
+    response.statusCode = 201;
+    response.end('{"id":"p1"}');
+  }, async baseUrl => {
+    const root = await mkdtemp(path.join(tmpdir(), 'testloop-nosecret-'));
+    process.env.TESTLOOP_PROBE_PASSWORD = 'S3cret!';
+    try {
+      await runVerification({
+        root,
+        runId: 'nosecret-run',
+        baseUrl,
+        security: { allowPrivateNetwork: true, allowedHosts: ['127.0.0.1'] },
+        auth: { type: 'login', url: `${baseUrl}/login`, body: { email: 'a@b.c', password: { $env: 'TESTLOOP_PROBE_PASSWORD' } }, tokenPath: 'token' },
+        scenarios: [{ id: 'create-product', method: 'POST', path: '/products', expectedStatuses: [201], body: { name: 'Widget' } }]
+      });
+
+      const persisted = await readFile(path.join(root, '.testloop', 'runs', 'nosecret-run', 'config.json'), 'utf8');
+      assert.equal(persisted.includes('S3cret!'), false, 'the resolved secret must never reach disk');
+      assert.equal(JSON.parse(persisted).auth.body.password.$env, 'TESTLOOP_PROBE_PASSWORD', 'the pointer survives so resume can re-authenticate');
+    } finally {
+      delete process.env.TESTLOOP_PROBE_PASSWORD;
+    }
   });
 });
