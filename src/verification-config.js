@@ -1,5 +1,5 @@
 import { isEnvReference } from './env-reference.js';
-import { SENSITIVE_KEYS } from './redaction.js';
+import { EMBEDDED_SECRET, SENSITIVE_KEYS } from './redaction.js';
 
 const VALID_MODES = new Set(['smoke', 'standard', 'deep']);
 const VALID_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']);
@@ -31,6 +31,14 @@ export function validateVerificationConfig(config) {
 // committed, and copied between machines. Refused here rather than at login time, so the run stops
 // before it creates any artifact. Same stance the inline bearer token already takes.
 function assertNoInlineSecrets(value, pathLabel) {
+  // A raw string body is the only way to send form-encoded content today, and it hides its
+  // credentials from every key-based check, so it is inspected as text.
+  if (typeof value === 'string') {
+    if (EMBEDDED_SECRET.test(value)) {
+      throw new Error(`${pathLabel} embeds a credential in a plain string. Put the secret in an environment variable and reference it with { "$env": "VARIABLE_NAME" }.`);
+    }
+    return;
+  }
   if (!value || typeof value !== 'object') return;
   for (const [key, item] of Object.entries(value)) {
     const location = `${pathLabel}.${key}`;

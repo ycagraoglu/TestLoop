@@ -122,6 +122,14 @@ refused before the run creates any artifact, and `{ "$env": "NAME" }` pointers a
 only. The persisted `config.json` keeps the pointer so `resume` can re-authenticate; `auth.json` keeps
 the evidence but redacts the token and drops the login response entirely.
 
+The check reads strings as well as keys. A raw string body is currently the only way to send
+form-encoded content, and it hides its credentials from any key-based inspection — an object key
+named `body` looks harmless while `password=…&client_secret=…` sits inside its value. Such a string
+is refused in `auth`, and redacted anywhere else in the config before it is persisted. Sending
+form-encoded credentials safely needs first-class support, which does not exist yet: a standard
+OAuth2 token endpoint (Keycloak, IdentityServer, Auth0, Azure AD) cannot be used as the login URL
+today, because `{ "$env": … }` is resolved in objects, not inside strings.
+
 If the token endpoint fails or the token is missing at `tokenPath`, the run ends `BLOCKED` without
 executing a single scenario. A 401 or 403 *during* a scenario is classified `AUTH_ERROR` and reported
 as `BLOCKED` — unless the scenario expected that status, which is a `PASS` (deep mode asserts 401/403

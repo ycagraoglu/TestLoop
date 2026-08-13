@@ -93,3 +93,44 @@ test('refuses a run configured with an inline credential', () => {
     () => validateVerificationConfig({ ...base, auth: { type: 'login', url: 'http://localhost/token', body: { email: 'a@b.c', password: { $env: 'PW' } } } })
   );
 });
+
+test('refuses a credential hidden inside a plain-string body, where key checks cannot see it', () => {
+  const base = { baseUrl: 'http://localhost', scenarios: [{ id: 'x', method: 'GET', path: '/x' }] };
+  const withBody = body => ({ ...base, auth: { type: 'login', url: 'http://localhost/connect/token', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body } });
+
+  assert.throws(
+    () => validateVerificationConfig(withBody('grant_type=password&username=admin&password=S3cret!')),
+    /auth\.body embeds a credential in a plain string/
+  );
+  assert.throws(
+    () => validateVerificationConfig(withBody('grant_type=client_credentials&client_id=x&client_secret=abc123')),
+    /embeds a credential/
+  );
+  assert.throws(
+    () => validateVerificationConfig({ ...base, auth: { type: 'login', url: 'http://localhost/token?access_token=leaked', body: {} } }),
+    /auth\.url embeds a credential/
+  );
+});
+
+test('does not mistake credential-shaped words for credentials', () => {
+  const base = { baseUrl: 'http://localhost', scenarios: [{ id: 'x', method: 'GET', path: '/x' }] };
+  // "password" as a grant name, a token endpoint path, and tokenPath naming a response field are all
+  // legitimate: none of them is a secret followed by a value.
+  assert.doesNotThrow(() => validateVerificationConfig({
+    ...base,
+    auth: {
+      type: 'login',
+      url: 'https://id.corp.com/connect/token',
+      body: 'grant_type=password',
+      tokenPath: 'access_token'
+    }
+  }));
+});
+
+test('strips an embedded credential from a persisted string, not just from keyed fields', () => {
+  const persisted = redactConfig({
+    scenarios: [{ id: 'x', body: 'username=admin&password=S3cret!', path: '/api/products' }]
+  });
+  assert.equal(persisted.scenarios[0].body, '[REDACTED]');
+  assert.equal(persisted.scenarios[0].path, '/api/products', 'ordinary strings are untouched');
+});
