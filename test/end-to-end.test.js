@@ -589,3 +589,34 @@ test('smoke mode reports a confirmed defect without ever invoking the fix role',
     assert.equal(productCalls, 1, 'no retest means no fix chain ran');
   });
 });
+
+test('a declined scenario blocks its dependent instead of reporting a runner malfunction', async () => {
+  await withServer((request, response) => {
+    response.setHeader('content-type', 'application/json');
+    response.statusCode = request.url === '/products' && request.method === 'POST' ? 500 : 200;
+    response.end('{}');
+  }, async baseUrl => {
+    const root = await mkdtemp(path.join(tmpdir(), 'testloop-declined-dep-'));
+    const roleAdapter = await writeRoleAdapter(root);
+    const config = {
+      root,
+      runId: 'declined-dep-run',
+      baseUrl,
+      security: { allowPrivateNetwork: true, allowedHosts: ['127.0.0.1'], allowedCommands: ['node'] },
+      roles: { diagnose: { command: ['node', roleAdapter] } },
+      scenarios: [
+        { id: 'create-product', method: 'POST', path: '/products', expectedStatuses: [201], body: { name: 'Widget' }, capture: { productId: 'id' } },
+        { id: 'get-product', method: 'GET', path: '/products/{create-product.productId}', expectedStatuses: [200] }
+      ]
+    };
+
+    await runVerification(config);
+    await resumeVerification({ root, runId: 'declined-dep-run', scenarioId: 'create-product', decision: 'decline' });
+
+    const summary = await readSummary(root, 'declined-dep-run');
+    assert.equal(summary.results[0].status, 'SKIPPED');
+    assert.equal(summary.results[1].status, 'BLOCKED', 'an unproduced dependency is an unmet precondition, not a runner error');
+    assert.equal(summary.results[1].classification, 'UNRESOLVED_DEPENDENCY');
+    assert.equal(summary.status, 'BLOCKED', 'nothing actually failed: a human chose to skip');
+  });
+});

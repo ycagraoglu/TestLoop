@@ -8,7 +8,13 @@ export function readPath(value, path) {
 export function interpolatePath(template, context) {
   return String(template).replace(/\{([^}]+)\}/g, (_, key) => {
     const resolved = readPath(context, key);
-    if (resolved === undefined) throw new Error(`Path value was not resolved: ${key}`);
+    if (resolved === undefined) {
+      // Marked so callers can tell a missing dependency apart from a malfunction: a placeholder
+      // whose producer was skipped, declined, or blocked is an unmet precondition, not an error.
+      const error = new Error(`Path value was not resolved: ${key}`);
+      error.code = 'PATH_UNRESOLVED';
+      throw error;
+    }
     return encodeURIComponent(String(resolved));
   });
 }

@@ -17,7 +17,19 @@ export async function runScenario(scenario, context) {
 
   if (fixturePlan.status !== 'READY') return blockedScenario(scenario, fixturePlan);
 
-  const request = createRequest(scenario, context, fixturePlan.payload);
+  let request;
+  try {
+    request = createRequest(scenario, context, fixturePlan.payload);
+  } catch (error) {
+    if (error.code !== 'PATH_UNRESOLVED') throw error;
+    return {
+      id: scenario.id,
+      status: 'BLOCKED',
+      classification: 'UNRESOLVED_DEPENDENCY',
+      reason: `${error.message}. The producing scenario did not run, was skipped, or captured no output.`
+    };
+  }
+
   const response = await executeRequest(request, scenario, context, true);
   const expectedStatuses = expectedStatusesFor(scenario);
   const classification = classifyExecution({

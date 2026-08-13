@@ -113,6 +113,17 @@ never invoked, with or without `requireApproval`.
 Either way, the fix role receives `projectInstructions`: the contents of the target project's own
 root-level `AGENTS.md` and/or `SKILL.md`, when present, so the fix follows that project's conventions.
 
+## Retest scope
+
+The retest replays the original request against whatever is listening on `baseUrl`. TestLoop rebuilds
+and restarts nothing, so a fix that only edits source is invisible to it and the scenario ends as
+`RETEST_FAILED` against the old build. Making the change live is the fix role's responsibility, and it
+must stop the previous process by listening port rather than by process name; the contract and the
+reasoning are in [`agents/bugfix.md`](../agents/bugfix.md).
+
+Authentication is re-resolved immediately before the retest, so a short-lived token captured before
+diagnosis cannot expire during slow fix and review calls.
+
 ## Review gate
 
 Retest cannot begin until an independent reviewer returns `APPROVED`. The reviewer must verify that the change:

@@ -172,6 +172,7 @@ Only `APPLICATION_BUG` diagnosis with verified preconditions may lead to source 
 A fix must:
 
 - follow the target project's own `AGENTS.md`/`SKILL.md` conventions when present (passed to the fix role as `projectInstructions`);
+- rebuild and restart the API so the retest reaches the fixed build; TestLoop replays the request against whatever is listening and rebuilds nothing;
 - target the root cause;
 - use the smallest safe diff;
 - avoid unrelated refactoring;
