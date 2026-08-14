@@ -65,10 +65,11 @@ Do not invent command flags. When an interface is unclear, run `testloop --help`
 5. Never invoke the fix role for a confirmed `APPLICATION_BUG` without explicit human approval via `testloop resume <run-id> <scenario-id> approve`, unless the run config sets `requireApproval: false`. When gated, a decline ends the scenario as `SKIPPED`, not a silent retry.
 6. The agent that implements a fix must not approve its own fix.
 7. Do not begin retesting before review returns `APPROVED`.
-8. Do not weaken validation, authorization, tenant isolation, or ownership checks to make a test pass.
-9. Do not run destructive or externally visible operations against production.
-10. Preserve reproducible requests, responses, logs, fixture proofs, diffs, and review decisions.
-11. Report `BLOCKED` or `ESCALATED` instead of retrying a failed step; the pipeline is single-pass by design.
+8. Treat a repair that breaks a previously passing scenario as failed, however well it fixed its own target.
+9. Do not weaken validation, authorization, tenant isolation, or ownership checks to make a test pass.
+10. Do not run destructive or externally visible operations against production.
+11. Preserve reproducible requests, responses, logs, fixture proofs, diffs, and review decisions.
+12. Report `BLOCKED` or `ESCALATED` instead of retrying a failed step; the pipeline is single-pass by design.
 
 ## Supported MVP profile
 
@@ -125,6 +126,9 @@ DIAGNOSE
         └─ default (gated) → AWAITING_APPROVAL
               ├─ human declines → SKIPPED
               └─ human approves (`testloop resume ... approve`) → FIX → REVIEW → RETEST
+                    └─ RETEST passed → REGRESSION SWEEP over everything that already passed
+                          ├─ all still pass → PASS (PASS_AFTER_FIX)
+                          └─ any now fails → FAIL (REGRESSION_DETECTED)
 ```
 
 A role adapter that times out, exits non-zero, or returns a status outside its contract ends that

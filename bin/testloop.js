@@ -47,7 +47,7 @@ try {
       const document = await loadOpenApi(openApiSource);
       const sourceManifest = await analyzeAspNetSource(root);
       const plan = buildTestPlan({ operations: listOperations(document), sourceManifest, mode: args[2] ?? 'standard' });
-      print(scaffoldRunConfig({ plan, sourceManifest, baseUrl: new URL(openApiSource).origin }));
+      print(scaffoldRunConfig({ plan, sourceManifest, baseUrl: new URL(openApiSource).origin, openApiUrl: openApiSource }));
       break;
     }
     case 'request': {

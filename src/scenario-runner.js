@@ -5,6 +5,7 @@ import { resolveAuthContext } from './auth.js';
 import { buildFixturePlan } from './fixture-planner.js';
 import { executeHttp } from './http.js';
 import { capturePaths, interpolatePath } from './object-path.js';
+import { findResponseViolations } from './openapi-contract.js';
 import { redactValue } from './redaction.js';
 import { runRole } from './role-runner.js';
 import { expectedStatusesFor } from './verification-config.js';
@@ -13,7 +14,7 @@ import { classifyExecution } from './workflow.js';
 export async function runScenario(scenario, context) {
   const fixtures = await resolveFixtures(scenario, context);
   const fixturePlan = createFixturePlan(scenario, fixtures);
-  await context.store.write(`${scenario.id}.fixture.json`, redactValue(fixturePlan));
+  await context.store.write(artifactName(scenario, context, 'fixture'), redactValue(fixturePlan));
 
   if (fixturePlan.status !== 'READY') return blockedScenario(scenario, fixturePlan);
 
@@ -40,6 +41,25 @@ export async function runScenario(scenario, context) {
   });
 
   if (classification === 'PASS') {
+    // The status is right; the body still has to be what the API promised. A response that meets its
+    // expected status while breaking its published shape is precisely SPEC_MISMATCH, and catching it
+    // here keeps that verdict deterministic instead of leaving it to a role's judgement.
+    const violations = findResponseViolations(context.contract, {
+      method: scenario.method,
+      pathname: new URL(request.url).pathname,
+      status: response.status,
+      body: response.body
+    });
+    if (violations.length > 0) {
+      return {
+        id: scenario.id,
+        status: 'SPEC_MISMATCH',
+        classification: 'SPEC_MISMATCH',
+        response,
+        violations,
+        reason: `HTTP ${response.status} was expected, but the body does not match the declared contract: ${violations[0]}`
+      };
+    }
     return { id: scenario.id, status: 'PASS', classification, response, output: capturePaths(response.body, scenario.capture) };
   }
 
@@ -87,10 +107,16 @@ async function executeRequest(request, scenario, context, persistRequest) {
     securityPolicy: context.securityPolicy,
     purpose: 'scenario'
   });
-  const name = persistRequest ? `${scenario.id}.execution.json` : `${scenario.id}.retest.json`;
+  const name = artifactName(scenario, context, persistRequest ? 'execution' : 'retest');
   const artifact = persistRequest ? { request: redactValue(request), response: redactValue(response) } : redactValue(response);
   await context.store.write(name, artifact);
   return response;
+}
+
+// A regression pass re-runs a scenario that already has artifacts on disk. Labelling its output
+// keeps the original evidence intact instead of overwriting the run it is being compared against.
+function artifactName(scenario, context, kind) {
+  return `${scenario.id}${context.artifactLabel ?? ''}.${kind}.json`;
 }
 
 async function handleFailure({ scenario, request, response, fixturePlan, classification, expectedStatuses, context }) {

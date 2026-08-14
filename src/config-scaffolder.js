@@ -6,7 +6,7 @@ const AUTH_ROUTE = /\b(auth|token|login|signin|connect)\b/i;
 // for a human to review, never an authority: it proposes where fixtures might come from, and the
 // runtime still refuses to use any of them without evidence. Anything it cannot infer is left out
 // rather than guessed, so the run blocks with a clear reason instead of testing a fiction.
-export function scaffoldRunConfig({ plan, sourceManifest = null, baseUrl, runId }) {
+export function scaffoldRunConfig({ plan, sourceManifest = null, baseUrl, runId, openApiUrl }) {
   if (!plan?.groups) throw new Error('A test plan with groups is required.');
   if (!baseUrl) throw new Error('baseUrl is required.');
 
@@ -30,6 +30,10 @@ export function scaffoldRunConfig({ plan, sourceManifest = null, baseUrl, runId 
     security: buildSecurity(baseUrl),
     scenarios
   };
+
+  // The document was already read to build the plan, so wiring it in costs nothing and gives every
+  // scenario response-shape checking for free.
+  if (openApiUrl) config.openApiUrl = openApiUrl;
 
   const auth = buildAuth(operations, baseUrl);
   if (auth) config.auth = auth;

@@ -759,3 +759,120 @@ test('a retest that reproduces the original defect is still a failed fix', async
     assert.equal(result.results[0].classification, 'RETEST_FAILED');
   });
 });
+
+// A repair that fixes its target while breaking a neighbour is the most damaging outcome an
+// automated repair loop can produce, and the one a green report hides best.
+async function withRepairThatBreaksNeighbour(action) {
+  let fixApplied = false;
+  return withServer((request, response) => {
+    response.setHeader('content-type', 'application/json');
+    if (request.url === '/control') { fixApplied = true; response.statusCode = 200; return response.end('{}'); }
+    if (request.url === '/a') { response.statusCode = fixApplied ? 500 : 201; return response.end('{}'); }
+    if (request.url === '/b') { response.statusCode = fixApplied ? 201 : 500; return response.end('{}'); }
+    response.statusCode = 404;
+    response.end('{}');
+  }, action);
+}
+
+async function writeBreakingFixAdapter(directory, baseUrl) {
+  const target = path.join(directory, 'breaking-adapter.mjs');
+  await writeFile(target, `
+let input = '';
+process.stdin.on('data', chunk => { input += chunk; });
+process.stdin.on('end', async () => {
+  const role = process.env.TESTLOOP_ROLE;
+  if (role === 'fix') await fetch('${baseUrl}/control');
+  const responses = {
+    diagnose: { status: 'APPLICATION_BUG', summary: 'Confirmed defect.' },
+    fix: { status: 'SUCCESS', summary: 'Patched /b.' },
+    review: { status: 'APPROVED', summary: 'Looks correct in isolation.' }
+  };
+  process.stdout.write(JSON.stringify(responses[role] ?? { status: 'INCONCLUSIVE' }));
+});
+`, 'utf8');
+  return target;
+}
+
+function repairConfig({ root, baseUrl, adapter, ...overrides }) {
+  return {
+    root,
+    baseUrl,
+    requireApproval: false,
+    security: { allowPrivateNetwork: true, allowedHosts: ['127.0.0.1'], allowedCommands: ['node'] },
+    roles: { diagnose: { command: ['node', adapter] }, fix: { command: ['node', adapter] }, review: { command: ['node', adapter] } },
+    scenarios: [
+      { id: 'scenario-a', method: 'POST', path: '/a', expectedStatuses: [201] },
+      { id: 'scenario-b', method: 'POST', path: '/b', expectedStatuses: [201] }
+    ],
+    ...overrides
+  };
+}
+
+test('fails the repair when the fix breaks a scenario that had already passed', async () => {
+  await withRepairThatBreaksNeighbour(async baseUrl => {
+    const root = await mkdtemp(path.join(tmpdir(), 'testloop-regression-'));
+    const adapter = await writeBreakingFixAdapter(root, baseUrl);
+    const result = await runVerification(repairConfig({ root, baseUrl, adapter, runId: 'regression-run' }));
+
+    const repaired = result.results.find(item => item.id === 'scenario-b');
+    assert.equal(repaired.classification, 'REGRESSION_DETECTED');
+    assert.equal(repaired.status, 'FAIL', 'a repair that breaks a neighbour is not an acceptable repair');
+    assert.deepEqual(repaired.regression.checked, ['scenario-a']);
+    assert.equal(repaired.regression.broken[0].id, 'scenario-a');
+    assert.equal(result.status, 'FAIL', 'the run must never report green after collateral damage');
+  });
+});
+
+test('records the regression sweep and stays green when the fix breaks nothing', async () => {
+  let productCalls = 0;
+  await withServer((request, response) => {
+    response.setHeader('content-type', 'application/json');
+    if (request.url === '/a') { response.statusCode = 201; return response.end('{}'); }
+    if (request.url === '/b') {
+      productCalls += 1;
+      response.statusCode = productCalls === 1 ? 500 : 201;
+      return response.end('{}');
+    }
+    response.statusCode = 404;
+    response.end('{}');
+  }, async baseUrl => {
+    const root = await mkdtemp(path.join(tmpdir(), 'testloop-regression-clean-'));
+    const adapter = await writeRoleAdapter(root);
+    const result = await runVerification(repairConfig({ root, baseUrl, adapter, runId: 'regression-clean-run' }));
+
+    const repaired = result.results.find(item => item.id === 'scenario-b');
+    assert.equal(repaired.status, 'PASS');
+    assert.deepEqual(repaired.regression, { checked: ['scenario-a'], broken: [] });
+    assert.equal(result.status, 'PASS');
+
+    const summary = await readSummary(root, 'regression-clean-run');
+    assert.deepEqual(summary.results.find(item => item.id === 'scenario-b').regression.checked, ['scenario-a']);
+  });
+});
+
+test('keeps the original evidence when a scenario is re-run for the regression sweep', async () => {
+  await withRepairThatBreaksNeighbour(async baseUrl => {
+    const root = await mkdtemp(path.join(tmpdir(), 'testloop-regression-evidence-'));
+    const adapter = await writeBreakingFixAdapter(root, baseUrl);
+    await runVerification(repairConfig({ root, baseUrl, adapter, runId: 'evidence-run' }));
+
+    const directory = path.join(root, '.testloop', 'runs', 'evidence-run');
+    const original = JSON.parse(await readFile(path.join(directory, 'scenario-a.execution.json'), 'utf8'));
+    const rerun = JSON.parse(await readFile(path.join(directory, 'scenario-a.regression.execution.json'), 'utf8'));
+
+    assert.equal(original.response.status, 201, 'the passing run must survive as evidence');
+    assert.equal(rerun.response.status, 500, 'the sweep is recorded separately');
+  });
+});
+
+test('regressionCheck: false skips the sweep', async () => {
+  await withRepairThatBreaksNeighbour(async baseUrl => {
+    const root = await mkdtemp(path.join(tmpdir(), 'testloop-regression-off-'));
+    const adapter = await writeBreakingFixAdapter(root, baseUrl);
+    const result = await runVerification(repairConfig({ root, baseUrl, adapter, runId: 'regression-off-run', regressionCheck: false }));
+
+    const repaired = result.results.find(item => item.id === 'scenario-b');
+    assert.equal(repaired.classification, 'PASS_AFTER_FIX');
+    assert.equal(repaired.regression, undefined);
+  });
+});

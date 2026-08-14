@@ -136,6 +136,35 @@ as `BLOCKED` — unless the scenario expected that status, which is a `PASS` (de
 on purpose for role and tenant checks). There is no token refresh mid-run; authentication is resolved
 once per run and again immediately before a retest.
 
+## Contract checking
+
+Set `openApiUrl` and a response that meets its expected status is also checked against the schema the
+API publishes for it. A body that breaks the declared shape is `SPEC_MISMATCH`, decided in code rather
+than by a role, because a missing required property or an array where an object was promised is a fact.
+
+The checks are deliberately narrow, since a false `SPEC_MISMATCH` sends someone to debug an endpoint
+that is behaving correctly. Structure and primitive types are checked; `oneOf`/`anyOf`, string formats,
+patterns, numeric bounds and extra properties are not. An unmapped path or a status with no declared
+response is skipped rather than guessed at.
+
+The value of this depends entirely on how precise the published document is, and generated documents
+are often loose. ASP.NET Core's default OpenAPI output, for example, emits no `required` array and
+widens numeric properties to accept strings, so a response missing half its fields still satisfies it.
+What that document does still pin down — an array that became an object, a string that became a
+number — is caught.
+
+## Regression sweep
+
+A repair is only acceptable if it left everything else standing, so after a retest passes, every
+scenario that had already passed is executed again against the fixed application. If any of them now
+fails, the repaired scenario becomes `FAIL` / `REGRESSION_DETECTED` and names what it broke: retesting
+the repaired scenario alone proves the reported defect is gone and nothing more.
+
+The sweep re-runs writes as well as reads, because a regression check that skips mutations is not a
+regression check. Its evidence is written alongside the original under a `.regression` label, so the
+run it is being compared against stays intact. Set `regressionCheck: false` to skip the sweep,
+accepting the risk in exchange for not repeating side effects.
+
 ## Retest scope
 
 The retest replays the original request against whatever is listening on `baseUrl`. TestLoop rebuilds

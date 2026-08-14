@@ -1,7 +1,7 @@
 import { ArtifactStore } from './artifact-store.js';
 import { resolveAuthContext } from './auth.js';
 import { redactValue } from './redaction.js';
-import { createContext, runnerError, runScenarios, shouldStop, summarizeStatus } from './orchestrator.js';
+import { checkForRegressions, createContext, loadContract, runnerError, runScenarios, shouldStop, summarizeStatus } from './orchestrator.js';
 import { runApprovedFix } from './scenario-runner.js';
 import { createSecurityPolicy } from './security-policy.js';
 
@@ -26,6 +26,7 @@ export async function resumeVerification({ root = process.cwd(), runId, scenario
   const securityPolicy = createSecurityPolicy(config.security);
   const auth = await resolveAuthContext(config.auth ?? { type: 'none' }, securityPolicy);
   const context = createContext(config, auth, store, securityPolicy);
+  context.contract = await loadContract(config, securityPolicy);
 
   // Same reasoning as the scenario loop: a throwing fix/review role must not cost the run its
   // summary, and here it would also strand every scenario queued behind this one.
@@ -34,10 +35,10 @@ export async function resumeVerification({ root = process.cwd(), runId, scenario
     : await runApprovedFix({ scenario: config.scenarios[scenarioIndex], diagnosis, request: pending.request, expectedStatuses: pending.expectedStatuses, context })
       .catch(error => runnerError(scenarioId, error));
 
-  await store.write(`${scenarioId}.resume.json`, redactValue(result));
   if (result.output) context.outputs[result.id] = result.output;
-  await continueRun({ store, config, context, scenarioIndex, result });
-  return result;
+  const resolved = await continueRun({ store, config, context, scenarioIndex, result });
+  await store.write(`${scenarioId}.resume.json`, redactValue(resolved));
+  return resolved;
 }
 
 // Resuming resolves only the one scenario the run paused on. A human decision on that scenario
@@ -50,18 +51,21 @@ async function continueRun({ store, config, context, scenarioIndex, result }) {
     if (item.output) context.outputs[item.id] = item.output;
   }
 
-  const results = priorResults.map(item => (item.id === result.id ? result : item));
+  // The approved fix ran outside the scenario loop, so its regression check has to be invoked here.
+  const checked = await checkForRegressions({ config, context, result, priorResults });
+  const results = priorResults.map(item => (item.id === checked.id ? checked : item));
   const blockers = [...(summary?.blockers ?? [])];
 
-  if (!shouldStop(config, result)) {
+  if (!shouldStop(config, checked)) {
     const attempted = new Set(results.map(item => item.id));
     const remaining = config.scenarios.slice(scenarioIndex + 1).filter(scenario => !attempted.has(scenario.id));
-    const continued = await runScenarios(config, context, remaining);
+    const continued = await runScenarios(config, context, remaining, results);
     results.push(...continued.results);
     blockers.push(...continued.blockers);
   }
 
   await store.complete({ status: summarizeStatus(results, blockers), results, blockers });
+  return checked;
 }
 
 async function readOptional(store, name) {

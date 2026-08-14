@@ -21,11 +21,12 @@ An endpoint is never marked as failed until authentication, persisted dependenci
 - real HTTP execution with structured evidence
 - persisted `.testloop/runs/<run-id>` artifacts
 - safe `dotnet build` and Development/Test API process lifecycle
-- gated workflow state, classification, retry budgets, and agent-call budgets
+- failure classification that attributes a result to its failed precondition before blaming the application
 - external diagnosis, bugfix, and independent review role adapters
 - confirmed application bugs pause at `AWAITING_APPROVAL` by default; the fix role only runs after `testloop resume ... approve` (or immediately when `requireApproval: false`), and a decline ends the scenario as `SKIPPED`; either way, `resume` then continues any later scenarios that hadn't run yet
 - the fix role receives the target project's own root-level `AGENTS.md`/`SKILL.md` as `projectInstructions` when present, so fixes follow existing project conventions
-- retest only after review returns `APPROVED`
+- retest only after review returns `APPROVED`, then a regression sweep re-runs every scenario that had already passed; a fix that breaks one of them is `REGRESSION_DETECTED`, never a green run
+- optional response-shape checking against the published OpenAPI document (`openApiUrl`): a body that breaks its declared contract is `SPEC_MISMATCH`, decided in code rather than by an agent
 - Agent Skills compatible metadata and instructions
 - Claude-style plugin metadata, role prompts, schemas, and configuration template
 
