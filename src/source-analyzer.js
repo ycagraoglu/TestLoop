@@ -2,6 +2,13 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { collectProjectFiles } from './project-files.js';
 
+// An attribute argument can itself contain brackets, and the most common one in ASP.NET Core does:
+// [Route("api/[controller]")]. A flat [^\]]+ stops at that inner ']', the surrounding attribute list
+// then fails to match, and the whole list is silently captured as empty -- losing the route template
+// and every [Authorize] on the declaration. One level of nesting covers the realistic cases.
+const ATTRIBUTE = String.raw`\[(?:[^[\]]|\[[^[\]]*\])*\]`;
+const ATTRIBUTE_LIST = String.raw`(?:\s*${ATTRIBUTE}\s*)`;
+
 const HTTP_ATTRIBUTES = new Map([
   ['HttpGet', 'GET'],
   ['HttpPost', 'POST'],
@@ -66,7 +73,7 @@ function parseSourceFile(root, file, source) {
 
 function parseControllers(file, source) {
   const results = [];
-  const classRegex = /(?<attributes>(?:\s*\[[^\]]+\]\s*)*)\s*public\s+(?:sealed\s+)?class\s+(?<name>\w+Controller)\b[^\{]*\{/g;
+  const classRegex = new RegExp(String.raw`(?<attributes>${ATTRIBUTE_LIST}*)\s*public\s+(?:sealed\s+)?class\s+(?<name>\w+Controller)\b[^{]*\{`, 'g');
   for (const match of source.matchAll(classRegex)) {
     const body = extractBlock(source, match.index + match[0].lastIndexOf('{'));
     const classAttributes = parseAttributes(match.groups.attributes);
@@ -88,7 +95,7 @@ function parseControllers(file, source) {
 
 function parseActions(body, baseRoute, inheritedAuthorize) {
   const endpoints = [];
-  const methodRegex = /(?<attributes>(?:\s*\[[^\]]+\]\s*)+)\s*public\s+(?:async\s+)?(?<returnType>[\w<>,?\.\[\]\s]+?)\s+(?<name>\w+)\s*\((?<params>[\s\S]*?)\)\s*(?:\{|=>)/g;
+  const methodRegex = new RegExp(String.raw`(?<attributes>${ATTRIBUTE_LIST}+)\s*public\s+(?:async\s+)?(?<returnType>[\w<>,?.\[\]\s]+?)\s+(?<name>\w+)\s*\((?<params>[\s\S]*?)\)\s*(?:\{|=>)`, 'g');
   for (const match of body.matchAll(methodRegex)) {
     const attributes = parseAttributes(match.groups.attributes);
     const httpAttribute = attributes.find(attribute => HTTP_ATTRIBUTES.has(attribute.name));
@@ -168,7 +175,7 @@ function parseForeignKeys(file, source) {
 
 function parseProperties(body) {
   const properties = [];
-  const regex = /(?<attributes>(?:\s*\[[^\]]+\]\s*)*)\s*public\s+(?<type>[\w<>,?\.\[\]]+)\s+(?<name>\w+)\s*\{\s*get;\s*(?:init|set);\s*\}/g;
+  const regex = new RegExp(String.raw`(?<attributes>${ATTRIBUTE_LIST}*)\s*public\s+(?<type>[\w<>,?.\[\]]+)\s+(?<name>\w+)\s*\{\s*get;\s*(?:init|set);\s*\}`, 'g');
   for (const match of body.matchAll(regex)) {
     const attributes = parseAttributes(match.groups.attributes);
     properties.push({

@@ -40,6 +40,13 @@ combination reports `SUCCESS` for a fix nothing is running.
 Return `FAILURE` if the rebuild fails or the port cannot be freed. Never report `SUCCESS` for a change
 that is not live.
 
+A restart also resets anything the application keeps in memory. If the API stores its data in an
+in-memory provider or a per-process cache, every entity created earlier in the run disappears, and the
+retest replays a request pointing at a row that no longer exists. TestLoop reports that honestly as
+`BLOCKED` / `RETEST_INCONCLUSIVE` rather than blaming the fix, but the run still cannot finish. Point
+scenarios that will be retested at seeded, stable fixtures, or run against a store that survives a
+restart.
+
 Required shape:
 
 ```json

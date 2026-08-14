@@ -155,9 +155,36 @@ export async function runApprovedFix({ scenario, diagnosis, request, expectedSta
   const auth = await resolveAuthContext(context.config.auth ?? { type: 'none' }, context.securityPolicy);
   const retestRequest = { ...request, headers: { ...request.headers, ...auth.headers } };
   const retest = await executeRequest(retestRequest, scenario, context, false);
-  return expectedStatuses.includes(retest.status)
-    ? { id: scenario.id, status: 'PASS', classification: 'PASS_AFTER_FIX', response: retest, diagnosis, fix, review, output: capturePaths(retest.body, scenario.capture) }
-    : { id: scenario.id, status: 'FAIL', classification: 'RETEST_FAILED', response: retest, diagnosis, fix, review };
+  const outcome = classifyExecution({
+    expectedStatuses,
+    actualStatus: retest.status,
+    fixtureVerified: true,
+    environmentHealthy: true
+  });
+
+  if (outcome === 'PASS') {
+    return { id: scenario.id, status: 'PASS', classification: 'PASS_AFTER_FIX', response: retest, diagnosis, fix, review, output: capturePaths(retest.body, scenario.capture) };
+  }
+
+  if (outcome === 'APPLICATION_BUG') {
+    return { id: scenario.id, status: 'FAIL', classification: 'RETEST_FAILED', response: retest, diagnosis, fix, review, reason: `The retest still failed with HTTP ${retest.status}.` };
+  }
+
+  // The retest neither met the expectation nor reproduced the defect, so it proves nothing either
+  // way. Its preconditions moved underneath it -- an entity created earlier in the run is gone if
+  // the fix restarted an application whose state does not survive a restart, and the replayed
+  // request now points at nothing. Calling that FAIL would assert the fix did not work, which this
+  // evidence cannot support.
+  return {
+    id: scenario.id,
+    status: 'BLOCKED',
+    classification: 'RETEST_INCONCLUSIVE',
+    response: retest,
+    diagnosis,
+    fix,
+    review,
+    reason: `The retest returned HTTP ${retest.status}, which neither meets the expectation nor reproduces the defect. The scenario's preconditions no longer hold, so the fix could not be judged.`
+  };
 }
 
 // ponytail: root-level only, no nested skills/*/SKILL.md scan; broaden if projects keep rules elsewhere.

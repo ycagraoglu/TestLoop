@@ -695,3 +695,67 @@ test('never writes a literal credential into the persisted run config', async ()
     }
   });
 });
+
+test('a retest that neither passes nor reproduces the defect is inconclusive, not a failed fix', async () => {
+  let productCalls = 0;
+  await withServer((request, response) => {
+    response.setHeader('content-type', 'application/json');
+    if (request.url === '/products' && request.method === 'POST') {
+      productCalls += 1;
+      // Fails first, then the entity it targeted is gone: exactly what a restart of an app with
+      // ephemeral state does to a fixture created earlier in the run.
+      response.statusCode = productCalls === 1 ? 500 : 404;
+      return response.end('{}');
+    }
+    response.statusCode = 404;
+    response.end('{}');
+  }, async baseUrl => {
+    const root = await mkdtemp(path.join(tmpdir(), 'testloop-retest-vanished-'));
+    const roleAdapter = await writeRoleAdapter(root);
+    const result = await runVerification({
+      root,
+      runId: 'retest-vanished-run',
+      baseUrl,
+      requireApproval: false,
+      security: { allowPrivateNetwork: true, allowedHosts: ['127.0.0.1'], allowedCommands: ['node'] },
+      roles: {
+        diagnose: { command: ['node', roleAdapter] },
+        fix: { command: ['node', roleAdapter] },
+        review: { command: ['node', roleAdapter] }
+      },
+      scenarios: [{ id: 'create-product', method: 'POST', path: '/products', expectedStatuses: [201], body: { name: 'Widget' } }]
+    });
+
+    assert.equal(result.results[0].status, 'BLOCKED');
+    assert.equal(result.results[0].classification, 'RETEST_INCONCLUSIVE');
+    assert.match(result.results[0].reason, /preconditions no longer hold/);
+    assert.equal(result.results[0].fix.status, 'SUCCESS', 'the fix and review evidence is still preserved');
+  });
+});
+
+test('a retest that reproduces the original defect is still a failed fix', async () => {
+  await withServer((request, response) => {
+    response.setHeader('content-type', 'application/json');
+    response.statusCode = request.url === '/products' && request.method === 'POST' ? 500 : 404;
+    response.end('{}');
+  }, async baseUrl => {
+    const root = await mkdtemp(path.join(tmpdir(), 'testloop-retest-failed-'));
+    const roleAdapter = await writeRoleAdapter(root);
+    const result = await runVerification({
+      root,
+      runId: 'retest-failed-run',
+      baseUrl,
+      requireApproval: false,
+      security: { allowPrivateNetwork: true, allowedHosts: ['127.0.0.1'], allowedCommands: ['node'] },
+      roles: {
+        diagnose: { command: ['node', roleAdapter] },
+        fix: { command: ['node', roleAdapter] },
+        review: { command: ['node', roleAdapter] }
+      },
+      scenarios: [{ id: 'create-product', method: 'POST', path: '/products', expectedStatuses: [201], body: { name: 'Widget' } }]
+    });
+
+    assert.equal(result.results[0].status, 'FAIL');
+    assert.equal(result.results[0].classification, 'RETEST_FAILED');
+  });
+});
