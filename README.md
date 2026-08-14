@@ -27,6 +27,7 @@ An endpoint is never marked as failed until authentication, persisted dependenci
 - the fix role receives the target project's own root-level `AGENTS.md`/`SKILL.md` as `projectInstructions` when present, so fixes follow existing project conventions
 - retest only after review returns `APPROVED`, then a regression sweep re-runs every scenario that had already passed; a fix that breaks one of them is `REGRESSION_DETECTED`, never a green run
 - optional response-shape checking against the published OpenAPI document (`openApiUrl`): a body that breaks its declared contract is `SPEC_MISMATCH`, decided in code rather than by an agent
+- every record a run creates is listed in `created.json`; `cleanup: true` then removes them in reverse order, making a run repeatable without ever touching data it did not create
 - Agent Skills compatible metadata and instructions
 - Claude-style plugin metadata, role prompts, schemas, and configuration template
 
@@ -156,6 +157,7 @@ When the target project (`root`) has a root-level `AGENTS.md` or `SKILL.md`, its
 - Supplied foreign keys still require verification evidence.
 - Authorization, validation, tenant isolation, and public contracts may not be weakened to make tests pass.
 - Destructive and external-side-effect scenarios must be explicitly included by the user configuration.
+- Cleanup deletes only what the run itself recorded creating, and only when `cleanup: true`; it is skipped entirely while a decision is pending.
 - Missing agent commands produce an unavailable/escalated result rather than pretending a fix occurred.
 
 ## Scope

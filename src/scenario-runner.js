@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { acquireFixture } from './fixture-acquisition.js';
 import { resolveAuthContext } from './auth.js';
+import { recordScenarioCreation } from './cleanup.js';
 import { buildFixturePlan } from './fixture-planner.js';
 import { executeHttp } from './http.js';
 import { capturePaths, interpolatePath } from './object-path.js';
@@ -32,6 +33,7 @@ export async function runScenario(scenario, context) {
   }
 
   const response = await executeRequest(request, scenario, context, true);
+  recordScenarioCreation(context, scenario, request, response);
   const expectedStatuses = expectedStatusesFor(scenario);
   const classification = classifyExecution({
     expectedStatuses,
@@ -76,7 +78,8 @@ async function resolveFixtures(scenario, context) {
       outputs: context.outputs,
       securityPolicy: context.securityPolicy,
       entityCache: context.entityCache,
-      maxCreationDepth: context.maxCreationDepth
+      maxCreationDepth: context.maxCreationDepth,
+      created: context.created
     });
     if (acquired.verified) fixtures[requirement.property] = acquired;
   }
@@ -181,6 +184,9 @@ export async function runApprovedFix({ scenario, diagnosis, request, expectedSta
   const auth = await resolveAuthContext(context.config.auth ?? { type: 'none' }, context.securityPolicy);
   const retestRequest = { ...request, headers: { ...request.headers, ...auth.headers } };
   const retest = await executeRequest(retestRequest, scenario, context, false);
+  // The retest replays the original request, so a creating scenario creates once more. It bypasses
+  // runScenario, which is where creations are normally noticed, so it has to report its own.
+  recordScenarioCreation(context, scenario, retestRequest, retest);
   const outcome = classifyExecution({
     expectedStatuses,
     actualStatus: retest.status,

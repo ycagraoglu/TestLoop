@@ -1,7 +1,7 @@
 import { ArtifactStore } from './artifact-store.js';
 import { resolveAuthContext } from './auth.js';
 import { redactValue } from './redaction.js';
-import { checkForRegressions, createContext, loadContract, runnerError, runScenarios, shouldStop, summarizeStatus } from './orchestrator.js';
+import { checkForRegressions, createContext, finishRun, loadContract, runnerError, runScenarios, shouldStop, summarizeStatus } from './orchestrator.js';
 import { runApprovedFix } from './scenario-runner.js';
 import { createSecurityPolicy } from './security-policy.js';
 
@@ -27,6 +27,9 @@ export async function resumeVerification({ root = process.cwd(), runId, scenario
   const auth = await resolveAuthContext(config.auth ?? { type: 'none' }, securityPolicy);
   const context = createContext(config, auth, store, securityPolicy);
   context.contract = await loadContract(config, securityPolicy);
+  // The paused run recorded what it created before stopping; cleanup can only be complete if this
+  // process carries that ledger forward rather than starting an empty one.
+  context.created = (await readOptional(store, 'created.json')) ?? [];
 
   // Same reasoning as the scenario loop: a throwing fix/review role must not cost the run its
   // summary, and here it would also strand every scenario queued behind this one.
@@ -64,7 +67,9 @@ async function continueRun({ store, config, context, scenarioIndex, result }) {
     blockers.push(...continued.blockers);
   }
 
-  await store.complete({ status: summarizeStatus(results, blockers), results, blockers });
+  const status = summarizeStatus(results, blockers);
+  await finishRun({ config, context, store, status });
+  await store.complete({ status, results, blockers });
   return checked;
 }
 

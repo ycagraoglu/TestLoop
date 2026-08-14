@@ -15,6 +15,9 @@ export function validateVerificationConfig(config) {
   if (config.requireApproval !== undefined && typeof config.requireApproval !== 'boolean') {
     throw new Error('requireApproval must be a boolean.');
   }
+  for (const flag of ['regressionCheck', 'cleanup']) {
+    if (config[flag] !== undefined && typeof config[flag] !== 'boolean') throw new Error(`${flag} must be a boolean.`);
+  }
   if (config.maxCreationDepth !== undefined && (!Number.isInteger(config.maxCreationDepth) || config.maxCreationDepth < 0 || config.maxCreationDepth > 10)) {
     throw new Error('maxCreationDepth must be an integer between 0 and 10.');
   }

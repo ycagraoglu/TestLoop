@@ -1,3 +1,4 @@
+import { recordCreation } from './cleanup.js';
 import { executeHttp } from './http.js';
 import { selectFixtureCandidate } from './fixture-planner.js';
 import { readPath } from './object-path.js';
@@ -85,6 +86,13 @@ async function resolveEnsureEntity(requirement, source, context) {
 
   const created = await createEntity(source.create, { ...context, creationDepth: depth + 1 });
   if (!created?.verified) return null;
+
+  recordCreation(context, {
+    entity: requirement.entity ?? requirement.property,
+    id: created.value,
+    collectionUrl: source.create.url,
+    createdBy: 'ensure-entity'
+  });
 
   const result = fixture(
     requirement,

@@ -225,6 +225,9 @@
     },
     "regressionCheck": {
       "type": "boolean"
+    },
+    "cleanup": {
+      "type": "boolean"
     }
   },
   "$defs": {

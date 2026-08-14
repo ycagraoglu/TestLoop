@@ -161,6 +161,11 @@ Resolve persisted dependencies in this order:
 
 For each resolved dependency, record its value, source, existence, tenant or ownership match, status predicates, and creation/cleanup responsibility.
 
+Records the run creates are listed in `created.json` whatever the configuration says. They are removed
+only when the run sets `cleanup: true`, which is what makes a run repeatable; without it the run
+reports what it left behind and leaves it there. Never enable cleanup against an environment whose
+data someone else depends on.
+
 ## Result classification
 
 Return one of:

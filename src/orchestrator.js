@@ -1,5 +1,6 @@
 import { ArtifactStore } from './artifact-store.js';
 import { resolveAuthContext } from './auth.js';
+import { runCleanup } from './cleanup.js';
 import { loadOpenApi } from './openapi.js';
 import { buildResponseContract } from './openapi-contract.js';
 import { redactAuth, redactConfig } from './redaction.js';
@@ -25,7 +26,21 @@ export async function runVerification(config, dependencies = {}) {
   context.contract = await loadContract(config, securityPolicy);
   const { results, blockers } = await runScenarios(config, context, config.scenarios);
 
-  return completeRun(store, summarizeStatus(results, blockers), results, blockers);
+  const status = summarizeStatus(results, blockers);
+  await finishRun({ config, context, store, status });
+  return completeRun(store, status, results, blockers);
+}
+
+// Writes the ledger of everything the run created, and removes it when asked. Deliberately skipped
+// while a run is paused for approval: the pending retest replays a request that depends on those
+// records, so deleting them here would sabotage the decision the human has not made yet. The resume
+// reloads the ledger and finishes the job.
+export async function finishRun({ config, context, store, status }) {
+  await store.write('created.json', context.created ?? []);
+  if (status === 'AWAITING_APPROVAL' || config.cleanup !== true) return;
+
+  const outcome = await runCleanup(context);
+  await store.write('cleanup.json', outcome);
 }
 
 // Response-shape checking is opt-in through `openApiUrl`, because without the document there is
@@ -44,7 +59,8 @@ export function createContext(config, auth, store, securityPolicy) {
     store,
     securityPolicy,
     entityCache: new Map(),
-    maxCreationDepth: config.maxCreationDepth ?? 3
+    maxCreationDepth: config.maxCreationDepth ?? 3,
+    created: []
   };
 }
 

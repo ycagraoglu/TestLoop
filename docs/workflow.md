@@ -165,6 +165,30 @@ regression check. Its evidence is written alongside the original under a `.regre
 run it is being compared against stays intact. Set `regressionCheck: false` to skip the sweep,
 accepting the risk in exchange for not repeating side effects.
 
+## What a run leaves behind
+
+TestLoop writes: `ensure-entity` creates records to satisfy foreign keys, scenarios exercise POST
+endpoints, and the regression sweep repeats those writes on every repair. Two separate concerns
+follow, and they are deliberately not the same setting.
+
+**Recording is unconditional.** Every record the run created is listed in `created.json` with the
+collection that produced it and what caused it, so a run can always say exactly what it left behind.
+This is what the fixture evidence rules mean by creation responsibility.
+
+**Removing is opt-in.** Deleting is a destructive operation and this tool does not perform those
+unless asked, so `cleanup: true` is required. It then deletes each recorded resource in reverse
+creation order, inferring the route from the collection that produced it
+(`DELETE <collection>/<id>`). That is a convention rather than a fact, so every attempt is recorded
+in `cleanup.json` and a failure never changes the verification verdict. Nothing the run did not
+create is ever touched.
+
+Cleanup is skipped while a run is paused at `AWAITING_APPROVAL`: the pending retest replays a request
+that depends on those records, so removing them would sabotage a decision the human has not made yet.
+`testloop resume` reloads the ledger and finishes the job once the run is really over.
+
+With cleanup enabled a run is repeatable — the same configuration twice leaves the same state, rather
+than accumulating a new record each time.
+
 ## Retest scope
 
 The retest replays the original request against whatever is listening on `baseUrl`. TestLoop rebuilds
