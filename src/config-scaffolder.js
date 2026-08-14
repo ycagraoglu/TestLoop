@@ -1,3 +1,4 @@
+import { buildNegativeScenarios } from './negative-scenarios.js';
 import { normalizeRoute } from './source-analyzer.js';
 
 const AUTH_ROUTE = /\b(auth|token|login|signin|connect)\b/i;
@@ -22,7 +23,13 @@ export function scaffoldRunConfig({ plan, sourceManifest = null, baseUrl, runId,
   const models = new Map((sourceManifest?.requestModels ?? []).map(model => [model.name, model]));
   const validators = new Map((sourceManifest?.validators ?? []).map(validator => [validator.name, validator]));
 
-  const scenarios = testable.map(operation => buildScenario({ operation, consumerToProducer, producerIds, collectionRoutes, models, validators, baseUrl }));
+  const positives = testable.map(operation => buildScenario({ operation, consumerToProducer, producerIds, collectionRoutes, models, validators, baseUrl }));
+  // Negatives are grouped after the happy path, so a run establishes that the API works before it
+  // starts proving what the API refuses.
+  const negatives = plan.mode === 'deep'
+    ? testable.flatMap((operation, index) => buildNegativeScenarios({ operation, scenario: positives[index], baseScenarioId: positives[index].id }))
+    : [];
+  const scenarios = [...positives, ...negatives];
   const config = {
     runId: runId ?? `scaffold-${new Date().toISOString().slice(0, 10)}`,
     mode: plan.mode ?? 'standard',

@@ -876,3 +876,54 @@ test('regressionCheck: false skips the sweep', async () => {
     assert.equal(repaired.regression, undefined);
   });
 });
+
+test('an anonymous scenario withholds the credentials the rest of the run uses', async () => {
+  const seen = [];
+  await withServer(async (request, response) => {
+    for await (const chunk of request) void chunk;
+    response.setHeader('content-type', 'application/json');
+    if (request.url === '/login') return response.end(JSON.stringify({ token: 'jwt-abc' }));
+    seen.push({ url: request.url, authorization: request.headers.authorization ?? null });
+    response.statusCode = request.headers.authorization ? 200 : 401;
+    response.end('{}');
+  }, async baseUrl => {
+    const root = await mkdtemp(path.join(tmpdir(), 'testloop-anonymous-'));
+    const result = await runVerification({
+      root,
+      runId: 'anonymous-run',
+      baseUrl,
+      security: { allowPrivateNetwork: true, allowedHosts: ['127.0.0.1'] },
+      auth: { type: 'login', url: `${baseUrl}/login`, body: {}, tokenPath: 'token' },
+      scenarios: [
+        { id: 'authenticated', method: 'GET', path: '/products', expectedStatuses: [200] },
+        { id: 'rejects-anonymous', method: 'GET', path: '/products', anonymous: true, expectedStatuses: [401, 403] }
+      ]
+    });
+
+    assert.equal(result.status, 'PASS');
+    assert.equal(seen[0].authorization, 'Bearer jwt-abc');
+    assert.equal(seen[1].authorization, null, 'the anonymous scenario must not inherit the run\'s token');
+  });
+});
+
+test('reports a missing guard as a fault rather than an inconclusive result', async () => {
+  await withServer((request, response) => {
+    response.setHeader('content-type', 'application/json');
+    response.statusCode = 200; // the endpoint answers everyone, guard or not
+    response.end('{}');
+  }, async baseUrl => {
+    const root = await mkdtemp(path.join(tmpdir(), 'testloop-unguarded-'));
+    const result = await runVerification({
+      root,
+      runId: 'unguarded-run',
+      baseUrl,
+      security: { allowPrivateNetwork: true, allowedHosts: ['127.0.0.1'] },
+      scenarios: [{ id: 'rejects-anonymous', method: 'GET', path: '/suppliers', anonymous: true, expectedStatuses: [401, 403] }]
+    });
+
+    assert.equal(result.results[0].status, 'FAIL');
+    assert.equal(result.results[0].classification, 'REJECTION_NOT_ENFORCED');
+    assert.match(result.results[0].reason, /not being enforced/);
+    assert.equal(result.status, 'FAIL');
+  });
+});

@@ -215,6 +215,9 @@
           },
           "fixtureSources": {
             "type": "object"
+          },
+          "anonymous": {
+            "type": "boolean"
           }
         }
       }

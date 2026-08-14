@@ -12,9 +12,11 @@ RESOLVE FIXTURES ──── not verified ────→ BLOCKED   (the endpoi
    EXECUTE  (authenticated request, real HTTP)
        ↓
    CLASSIFY
-  ├─ expected status ──────────────────→ PASS
-  ├─ ENVIRONMENT_ERROR / AUTH_ERROR / FIXTURE_ERROR / INCONCLUSIVE
-  │                                    → FAIL or BLOCKED, without calling any role
+  ├─ expected status ──────────────────→ PASS  (body also checked, if openApiUrl is set,
+  │                                             so a broken shape is SPEC_MISMATCH)
+  ├─ success where refusal was demanded → FAIL (REJECTION_NOT_ENFORCED)
+  ├─ AUTH_ERROR / FIXTURE_ERROR / ENVIRONMENT_ERROR / INCONCLUSIVE
+  │                                    → BLOCKED, without calling any role
   └─ APPLICATION_BUG (5xx with every precondition evidenced)
              ↓
         DIAGNOSE  (role)
@@ -38,8 +40,14 @@ RESOLVE FIXTURES ──── not verified ────→ BLOCKED   (the endpoi
                                        └─ APPROVED
                                                      ↓
                                         RETEST (re-authenticated)
-                                       ├─ expected status → PASS (PASS_AFTER_FIX)
-                                       └─ otherwise → FAIL (RETEST_FAILED)
+                                       ├─ reproduces the defect → FAIL (RETEST_FAILED)
+                                       ├─ neither → BLOCKED (RETEST_INCONCLUSIVE)
+                                       └─ expected status
+                                                     ↓
+                                         REGRESSION SWEEP
+                                    (everything that already passed)
+                                       ├─ all still pass → PASS (PASS_AFTER_FIX)
+                                       └─ any now fails → FAIL (REGRESSION_DETECTED)
 ```
 
 `CHANGES_REQUESTED` from review and a failed retest are both terminal (`ESCALATED` / `FAIL`); TestLoop
@@ -164,6 +172,21 @@ The sweep re-runs writes as well as reads, because a regression check that skips
 regression check. Its evidence is written alongside the original under a `.regression` label, so the
 run it is being compared against stays intact. Set `regressionCheck: false` to skip the sweep,
 accepting the risk in exchange for not repeating side effects.
+
+## Proving refusals
+
+A guard is only proven to exist by watching it reject something, and a missing `[Authorize]` or a
+validator that was never wired up passes every happy-path scenario ever written. `scaffold ... deep`
+generates the scenarios that try: an unauthenticated call to each protected endpoint, one request per
+declared validation rule breaking that rule alone, and a lookup for an identifier that cannot exist.
+
+`anonymous: true` on a scenario withholds the credentials the rest of the run uses, which is what
+makes the first of those possible.
+
+Each expectation accepts the family of statuses that mean the same thing (`401` or `403`, `400` or
+`422`), because a scenario that fails over which rejection code was chosen teaches nobody anything.
+When such a scenario is answered with success instead, the result is `FAIL` /
+`REJECTION_NOT_ENFORCED` — the one shape of unexpected 2xx that no precondition can explain.
 
 ## What a run leaves behind
 

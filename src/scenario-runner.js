@@ -96,10 +96,13 @@ function createRequest(scenario, context, body) {
   // URL(): the URL parser percent-encodes literal { and } on the way in, so a placeholder search
   // run afterward on the constructed URL string would never find anything to replace.
   const interpolatedPath = interpolatePath(scenario.path, { ...context.outputs, ...(scenario.pathParameters ?? {}) });
+  // `anonymous` deliberately withholds the credentials the rest of the run uses, so a scenario can
+  // assert that a protected endpoint still refuses an unauthenticated caller.
+  const authHeaders = scenario.anonymous === true ? {} : context.auth.headers;
   return {
     method: scenario.method,
     url: new URL(interpolatedPath, context.config.baseUrl).toString(),
-    headers: { ...context.auth.headers, ...(scenario.headers ?? {}) },
+    headers: { ...authHeaders, ...(scenario.headers ?? {}) },
     body
   };
 }
@@ -241,6 +244,9 @@ async function runAndStoreRole(role, scenario, input, context) {
 const PRECONDITION_CLASSIFICATIONS = new Set(['AUTH_ERROR', 'FIXTURE_ERROR', 'ENVIRONMENT_ERROR', 'INCONCLUSIVE']);
 
 function failureReason(classification, status) {
+  if (classification === 'REJECTION_NOT_ENFORCED') {
+    return `The request succeeded with HTTP ${status} where the scenario expects it to be refused. The authorization, validation, or ownership check it asserts is not being enforced.`;
+  }
   if (classification === 'AUTH_ERROR') {
     return `HTTP ${status} although the authentication context resolved successfully. The token may have expired mid-run, or it lacks the role or scope this endpoint requires.`;
   }

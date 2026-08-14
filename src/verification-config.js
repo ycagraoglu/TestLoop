@@ -66,6 +66,9 @@ function validateScenario(scenario) {
   if (!VALID_METHODS.has(scenario.method)) {
     throw new Error(`Scenario ${scenario.id} has an invalid method: ${scenario.method}.`);
   }
+  if (scenario.anonymous !== undefined && typeof scenario.anonymous !== 'boolean') {
+    throw new Error(`Scenario ${scenario.id} has a non-boolean anonymous flag.`);
+  }
   if (scenario.expectedStatuses !== undefined) {
     const valid = Array.isArray(scenario.expectedStatuses) &&
       scenario.expectedStatuses.every(status => Number.isInteger(status) && status >= 100 && status <= 599);

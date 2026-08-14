@@ -27,6 +27,7 @@ An endpoint is never marked as failed until authentication, persisted dependenci
 - the fix role receives the target project's own root-level `AGENTS.md`/`SKILL.md` as `projectInstructions` when present, so fixes follow existing project conventions
 - retest only after review returns `APPROVED`, then a regression sweep re-runs every scenario that had already passed; a fix that breaks one of them is `REGRESSION_DETECTED`, never a green run
 - optional response-shape checking against the published OpenAPI document (`openApiUrl`): a body that breaks its declared contract is `SPEC_MISMATCH`, decided in code rather than by an agent
+- `scaffold ... deep` generates the negative checks that prove refusals: anonymous access to protected endpoints, one request per validation rule, and lookups for identifiers that cannot exist; a call that succeeds where refusal was demanded is `REJECTION_NOT_ENFORCED`
 - every record a run creates is listed in `created.json`; `cleanup: true` then removes them in reverse order, making a run repeatable without ever touching data it did not create
 - Agent Skills compatible metadata and instructions
 - Claude-style plugin metadata, role prompts, schemas, and configuration template

@@ -27,6 +27,10 @@ deep [scope]
 
 Default to `standard` when the user does not choose a mode. Treat `scope` as the project, feature, controller, endpoint, or OpenAPI document the user wants tested.
 
+The mode is applied where it belongs: `plan` and `scaffold` use it to decide what to generate, and a
+run uses it only to refuse repairs in `smoke`. A deep run is therefore a standard run over a
+configuration that already contains the extra scenarios.
+
 ## CLI usage
 
 Confirm that the CLI is available before running a workflow:
@@ -95,7 +99,24 @@ Resolve fixtures, authenticate, execute valid workflow-oriented tests, diagnose 
 
 ### deep
 
-Run standard behavior plus negative, boundary, role, tenant, and regression scenarios. Use only when requested or justified by release risk.
+Standard behavior, plus the checks that prove an endpoint refuses what it should refuse. `testloop
+scaffold <openapi-url> <project-path> deep` generates them from the analyzed source, so they are
+visible in the configuration and can be edited or removed before the run:
+
+- an unauthenticated call to every endpoint carrying `[Authorize]`, expecting `401` or `403`;
+- one request per declared validation rule, breaking that rule alone and leaving the rest of the
+  request valid, expecting `400` or `422`;
+- a lookup for an identifier that cannot exist, expecting `404`.
+
+A request that succeeds where a scenario demands refusal is `FAIL` / `REJECTION_NOT_ENFORCED`: no
+unmet precondition can explain it, so it is reported as a fault rather than as inconclusive.
+
+Not generated, because nothing in the source establishes them: role-specific rejections need a second
+set of credentials, and tenant isolation needs a tenant model that this profile does not describe.
+Write those by hand. Regression coverage is not generated either — it happens automatically after
+every repair.
+
+Use deep only when requested or justified by release risk.
 
 ## Workflow
 
