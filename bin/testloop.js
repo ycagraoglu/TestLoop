@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFile } from 'node:fs/promises';
 import { ArtifactStore } from '../src/artifact-store.js';
+import { scaffoldRunConfig } from '../src/config-scaffolder.js';
 import { discoverDotnetProjects, ensureDirectoryExists } from '../src/discovery.js';
 import { executeHttp } from '../src/http.js';
 import { listOperations, loadOpenApi } from '../src/openapi.js';
@@ -38,6 +39,15 @@ try {
       const document = await loadOpenApi(openApiSource);
       const sourceManifest = await analyzeAspNetSource(root);
       print(buildTestPlan({ operations: listOperations(document), sourceManifest, mode: args[2] ?? 'standard' }));
+      break;
+    }
+    case 'scaffold': {
+      const openApiSource = required(args[0], 'OpenAPI URL');
+      const root = args[1] ?? process.cwd();
+      const document = await loadOpenApi(openApiSource);
+      const sourceManifest = await analyzeAspNetSource(root);
+      const plan = buildTestPlan({ operations: listOperations(document), sourceManifest, mode: args[2] ?? 'standard' });
+      print(scaffoldRunConfig({ plan, sourceManifest, baseUrl: new URL(openApiSource).origin }));
       break;
     }
     case 'request': {
@@ -98,5 +108,5 @@ function required(value, name) {
 }
 
 function printHelp() {
-  console.log(`TestLoop\n\nCommands:\n  testloop discover [root]\n  testloop analyze [root]\n  testloop openapi <url>\n  testloop plan <openapi-url> [root] [mode]\n  testloop request <method> <url> [json-body]\n  testloop build <project-path>\n  testloop serve <project-path> [url] [environment]\n  testloop run <testloop.config.json>\n  testloop resume <run-id> <scenario-id> <approve|decline> [root]\n`);
+  console.log(`TestLoop\n\nCommands:\n  testloop discover [root]\n  testloop analyze [root]\n  testloop openapi <url>\n  testloop plan <openapi-url> [root] [mode]\n  testloop scaffold <openapi-url> [root] [mode]\n  testloop request <method> <url> [json-body]\n  testloop build <project-path>\n  testloop serve <project-path> [url] [environment]\n  testloop run <testloop.config.json>\n  testloop resume <run-id> <scenario-id> <approve|decline> [root]\n`);
 }

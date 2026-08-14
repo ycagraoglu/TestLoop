@@ -42,11 +42,17 @@ testloop discover <project-path>
 testloop analyze <project-path>
 testloop openapi <openapi-url>
 testloop plan <openapi-url> <project-path> <smoke|standard|deep>
+testloop scaffold <openapi-url> <project-path> <smoke|standard|deep>
 testloop build <project-file>
 testloop serve <project-file> <base-url> <Development|Test>
 testloop run <config-file>
 testloop resume <run-id> <scenario-id> <approve|decline>
 ```
+
+`scaffold` prints a run configuration derived from the plan and the source manifest. Treat it as a
+draft: fill in its `REPLACE_WITH_*` placeholders, add `roles` when the repair loop is wanted, and
+confirm the proposed fixture endpoints before running it. It deliberately omits destructive
+operations and credential endpoints; add those by hand only when the user asks.
 
 Do not invent command flags. When an interface is unclear, run `testloop --help` and use the documented command shape. TestLoop commands must not wait for interactive secrets or confirmations; provide required values through configuration, environment variables, or an already authenticated local tool.
 

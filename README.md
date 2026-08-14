@@ -70,6 +70,7 @@ testloop discover .
 testloop analyze .
 testloop openapi http://127.0.0.1:5099/swagger/v1/swagger.json
 testloop plan http://127.0.0.1:5099/swagger/v1/swagger.json . standard
+testloop scaffold http://127.0.0.1:5099/swagger/v1/swagger.json . standard > testloop.config.json
 testloop build ./src/MyApi/MyApi.csproj
 testloop serve ./src/MyApi/MyApi.csproj http://127.0.0.1:5099 Development
 testloop run ./testloop.config.json
@@ -77,7 +78,16 @@ testloop resume <run-id> <scenario-id> approve
 testloop resume <run-id> <scenario-id> decline
 ```
 
-Copy `templates/testloop.config.example.json` and adapt it to the target API. Run evidence is written under `.testloop/runs`.
+`testloop scaffold` turns a plan into a runnable configuration: it carries the analyzed request model,
+validator rules and foreign-key dependencies into each scenario, proposes the collection endpoint each
+dependency can be read from, and chains `/things/{id}` to the `POST /things` that creates what it
+addresses. Destructive operations and credential endpoints are left out, and the auth block is a
+skeleton with an `$env` reference — a run refuses to start on an inline secret. Review the result
+before running it: it is a draft, not an authority, and every fixture it proposes is still verified at
+run time or the scenario blocks.
+
+Alternatively, copy `templates/testloop.config.example.json` and adapt it by hand. Run evidence is
+written under `.testloop/runs`.
 
 ## Local release workflow
 
