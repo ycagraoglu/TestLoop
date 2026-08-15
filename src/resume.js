@@ -68,7 +68,7 @@ async function continueRun({ store, config, context, scenarioIndex, result }) {
   }
 
   const status = summarizeStatus(results, blockers);
-  await finishRun({ config, context, store, status });
+  await finishRun({ config, context, store, status, results, blockers });
   await store.complete({ status, results, blockers });
   return checked;
 }

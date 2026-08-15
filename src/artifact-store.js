@@ -25,6 +25,13 @@ export class ArtifactStore {
     return target;
   }
 
+  async writeText(name, value) {
+    await mkdir(this.directory, { recursive: true });
+    const target = path.join(this.directory, safeName(name));
+    await writeFile(target, value, 'utf8');
+    return target;
+  }
+
   async read(name) {
     return JSON.parse(await readFile(path.join(this.directory, safeName(name)), 'utf8'));
   }

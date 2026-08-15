@@ -28,6 +28,7 @@ An endpoint is never marked as failed until authentication, persisted dependenci
 - retest only after review returns `APPROVED`, then a regression sweep re-runs every scenario that had already passed; a fix that breaks one of them is `REGRESSION_DETECTED`, never a green run
 - optional response-shape checking against the published OpenAPI document (`openApiUrl`): a body that breaks its declared contract is `SPEC_MISMATCH`, decided in code rather than by an agent
 - `scaffold ... deep` generates the negative checks that prove refusals: anonymous access to protected endpoints, one request per validation rule, and lookups for identifiers that cannot exist; a call that succeeds where refusal was demanded is `REJECTION_NOT_ENFORCED`
+- every run writes a human-readable `report.md` stating not just what passed, but what it left behind and what it never verified
 - every record a run creates is listed in `created.json`; `cleanup: true` then removes them in reverse order, making a run repeatable without ever touching data it did not create
 - Agent Skills compatible metadata and instructions
 - Claude-style plugin metadata, role prompts, schemas, and configuration template

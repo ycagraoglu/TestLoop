@@ -224,3 +224,7 @@ A repaired scenario is complete only when:
 2. the original request passes using verified fixtures;
 3. required related regression checks pass;
 4. the final report lists evidence, changes, remaining risks, and blocked coverage.
+
+Every run writes that report to `.testloop/runs/<run-id>/report.md`, whatever its outcome. Read it
+before reporting a result to the user: its **Not verified** section states the limits of the verdict,
+which a passing run needs said out loud more than a failing one does.

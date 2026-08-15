@@ -4,6 +4,7 @@ import { runCleanup } from './cleanup.js';
 import { loadOpenApi } from './openapi.js';
 import { buildResponseContract } from './openapi-contract.js';
 import { redactAuth, redactConfig } from './redaction.js';
+import { buildReport } from './report.js';
 import { runScenario } from './scenario-runner.js';
 import { assertAllowedUrl, createSecurityPolicy } from './security-policy.js';
 import { validateVerificationConfig } from './verification-config.js';
@@ -20,14 +21,18 @@ export async function runVerification(config, dependencies = {}) {
 
   const auth = await resolveAuthContext(config.auth ?? { type: 'none' }, securityPolicy);
   await store.write('auth.json', redactAuth(auth));
-  if (auth.status === 'BLOCKED') return completeRun(store, 'BLOCKED', [], [auth.reason]);
+  if (auth.status === 'BLOCKED') {
+    // Nothing ran, which is exactly the outcome a reader most needs stated plainly.
+    await finishRun({ config, context: null, store, status: 'BLOCKED', results: [], blockers: [auth.reason] });
+    return completeRun(store, 'BLOCKED', [], [auth.reason]);
+  }
 
   const context = createContext(config, auth, store, securityPolicy);
   context.contract = await loadContract(config, securityPolicy);
   const { results, blockers } = await runScenarios(config, context, config.scenarios);
 
   const status = summarizeStatus(results, blockers);
-  await finishRun({ config, context, store, status });
+  await finishRun({ config, context, store, status, results, blockers });
   return completeRun(store, status, results, blockers);
 }
 
@@ -35,12 +40,17 @@ export async function runVerification(config, dependencies = {}) {
 // while a run is paused for approval: the pending retest replays a request that depends on those
 // records, so deleting them here would sabotage the decision the human has not made yet. The resume
 // reloads the ledger and finishes the job.
-export async function finishRun({ config, context, store, status }) {
-  await store.write('created.json', context.created ?? []);
-  if (status === 'AWAITING_APPROVAL' || config.cleanup !== true) return;
+export async function finishRun({ config, context, store, status, results = [], blockers = [] }) {
+  const created = context?.created ?? [];
+  await store.write('created.json', created);
 
-  const outcome = await runCleanup(context);
-  await store.write('cleanup.json', outcome);
+  let cleanup = null;
+  if (context && status !== 'AWAITING_APPROVAL' && config.cleanup === true) {
+    cleanup = await runCleanup(context);
+    await store.write('cleanup.json', cleanup);
+  }
+
+  await store.writeText('report.md', buildReport({ config, runId: store.runId, status, results, blockers, created, cleanup }));
 }
 
 // Response-shape checking is opt-in through `openApiUrl`, because without the document there is

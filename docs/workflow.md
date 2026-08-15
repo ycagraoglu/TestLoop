@@ -188,6 +188,22 @@ Each expectation accepts the family of statuses that mean the same thing (`401` 
 When such a scenario is answered with success instead, the result is `FAIL` /
 `REJECTION_NOT_ENFORCED` — the one shape of unexpected 2xx that no precondition can explain.
 
+## The report
+
+Every run writes `report.md` next to its artifacts, including a run that never got past the login.
+`summary.json` is for machines; this is what a person reads before deciding whether to trust the
+verdict.
+
+Beyond the outcome of each scenario, it carries three sections that qualify that outcome:
+
+- **Changes** — what was modified, who approved it, and what the regression sweep found afterwards.
+- **Remaining risks** — failures, contract violations, decisions still waiting on a person, and any
+  records the run left in the environment.
+- **Not verified** — the limits of the verdict. Scenarios that could not proceed, and the questions
+  the configuration never asked: no contract document, refusals not exercised outside deep mode, a
+  disabled regression sweep. A passing run needs this stated more than a failing one does, because a
+  green result is only ever as broad as what was actually executed.
+
 ## What a run leaves behind
 
 TestLoop writes: `ensure-entity` creates records to satisfy foreign keys, scenarios exercise POST
