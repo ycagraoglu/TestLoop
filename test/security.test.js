@@ -151,3 +151,14 @@ test('refuses a credential header on a scenario, where redaction would break it 
   assert.doesNotThrow(() => validateVerificationConfig(withHeaders({ 'content-type': 'application/json' })));
   assert.doesNotThrow(() => validateVerificationConfig(withHeaders({ 'X-Correlation-Id': 'run-1' })));
 });
+
+test('explains a role command that cannot be started, rather than passing on a bare ENOENT', async () => {
+  const { runRole } = await import('../src/role-runner.js');
+  const policy = createSecurityPolicy({ allowedCommands: ['definitely-not-a-real-executable'] });
+
+  await assert.rejects(
+    runRole('diagnose', {}, { diagnose: { command: ['definitely-not-a-real-executable'] } }, policy),
+    /must be an executable file.*\.cmd shims that cannot start without a shell/s,
+    'the Windows cause is named, since that is where this failure actually happens'
+  );
+});

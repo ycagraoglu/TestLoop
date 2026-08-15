@@ -107,3 +107,19 @@ public class CreateProductRequestValidator : AbstractValidator<CreateProductRequ
   assert.equal(ids.includes('post-api-products-rejects-anonymous'), true, 'RequireAuthorization on the group became an anonymous check');
   assert.equal(ids.includes('post-api-products-rejects-name-not-empty'), true, 'the validator rule became a boundary check');
 });
+
+test('reads a file written with Windows line endings identically', () => {
+  const source = [
+    'var api = app.MapGroup("/api").RequireAuthorization();',
+    'var admin = api.MapGroup("/admin").RequireAuthorization("Admin");',
+    'api.MapPost("/products", (CreateProductRequest request) => Results.Created());',
+    'admin.MapDelete("/products/{id}", (Guid id) => Results.NoContent());',
+    'api.MapGet("/open", () => Results.Ok()).AllowAnonymous();'
+  ].join('\n');
+
+  assert.deepEqual(
+    analyzeMinimalApiEndpoints(source.replace(/\n/g, '\r\n')),
+    analyzeMinimalApiEndpoints(source),
+    'a checkout with CRLF endings must analyze the same as one with LF'
+  );
+});

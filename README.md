@@ -25,9 +25,19 @@ Read this first. Most surprises come from pointing it at a project shaped differ
 | Test-database access | **No** | Fixtures come from HTTP endpoints only. |
 | Destructive scenarios (`DELETE`) | **Opt-in** | Never scaffolded automatically; `cleanup: true` removes only records the run itself created. |
 
-**Environments.** Node.js 20 or newer is declared; development and testing so far have been on Node 23,
-macOS, and .NET 10 against controller-based projects. Windows and older .NET versions are not yet
-verified — reports from those are welcome and are the most useful kind of issue to open.
+**Environments.** The suite passes on Node 20, 22 and 23. Development and end-to-end testing have been
+on macOS against .NET 10.
+
+Windows has not been run end to end, so it is listed as unverified rather than supported. What has
+been checked from here: source files with CRLF endings analyze identically to LF ones, no path is
+built by string concatenation, and a role command that cannot be started now explains the Windows
+cause — `npm` and `npx` exist there only as `.cmd` shims, and role commands are deliberately spawned
+without a shell, so point them at an interpreter (`["node", "./agents/diagnose.mjs"]`) instead. What
+remains unverified is everything that needs the platform itself: process lifecycle, `dotnet`
+discovery, and the fix role's rebuild-and-restart step. Older .NET versions are likewise untested.
+
+Reports from Windows or from .NET 6/8 are the most useful kind of issue to open; attach the run's
+`report.md` and `summary.json`.
 
 ## Trust rule
 

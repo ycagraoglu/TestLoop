@@ -33,9 +33,13 @@ Before returning `SUCCESS`, the fix role must leave the fixed code actually serv
 4. wait until it answers.
 
 Stop the old process **by listening port**, not by name. `dotnet run` launches the apphost binary
-(`bin/Debug/<tfm>/<AppName>`), so a pattern like `pkill -f <AppName>.dll` misses it: the old build keeps
-the port, the new one cannot bind, and a readiness probe is answered by the unfixed process. That
+(`bin/Debug/<tfm>/<AppName>`), so matching on the assembly name misses it: the old build keeps the
+port, the new one cannot bind, and a readiness probe is answered by the unfixed process. That
 combination reports `SUCCESS` for a fix nothing is running.
+
+Find the listener with whatever the host provides — `lsof -t -iTCP:<port> -sTCP:LISTEN` on macOS and
+Linux, `netstat -ano | findstr :<port>` or `Get-NetTCPConnection -LocalPort <port>` on Windows — and
+confirm the port is free before starting the rebuilt application.
 
 Return `FAILURE` if the rebuild fails or the port cannot be freed. Never report `SUCCESS` for a change
 that is not live.

@@ -37,7 +37,7 @@ export async function runRole(role, input, config = {}, securityPolicy = null) {
       child.kill('SIGKILL');
       reject(new Error(`${role} role timed out.`));
     }, config.timeoutMs ?? 120000);
-    child.once('error', reject);
+    child.once('error', error => reject(explainSpawnFailure(error, executable)));
     child.once('exit', value => { clearTimeout(timer); resolve(value); });
   });
 
@@ -48,6 +48,17 @@ export async function runRole(role, input, config = {}, securityPolicy = null) {
   const result = JSON.parse(stdout);
   validateRoleResult(role, result);
   return result;
+}
+
+// `shell: false` is deliberate — it is what keeps a role command from being a shell expression — but
+// it also means Windows cannot start a wrapper like npm or npx, which exist there only as .cmd
+// shims. Raw ENOENT gives no hint of that, so the cause is spelled out.
+function explainSpawnFailure(error, executable) {
+  if (error.code !== 'ENOENT') return error;
+  return new Error(
+    `Role command not found: ${executable}. It must be an executable file, not a shell builtin, alias, or wrapper script. ` +
+    'On Windows npm, npx and similar are .cmd shims that cannot start without a shell; point the command at the interpreter instead, for example ["node", "./agents/diagnose.mjs"].'
+  );
 }
 
 export function validateRoleResult(role, result) {

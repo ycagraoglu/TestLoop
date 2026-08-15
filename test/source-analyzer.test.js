@@ -169,3 +169,28 @@ public class ProductsController : ControllerBase
   const result = await analyzeAspNetSource(root);
   assert.deepEqual(result.diagnostics, [], 'a project it can read gets no notes');
 });
+
+test('reads a file written with Windows line endings identically', async () => {
+  const source = `
+[ApiController]
+[Authorize(Roles = "Admin")]
+[Route("api/v2/[controller]")]
+public class ProductsController : ControllerBase
+{
+    [HttpPost]
+    public async Task<IActionResult> Create([FromBody] CreateProductRequest request) { }
+}
+
+public record CreateProductRequest(string Name, decimal Price);`;
+
+  async function analyze(text) {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'testloop-eol-'));
+    await mkdir(path.join(root, 'Controllers'));
+    await writeFile(path.join(root, 'Controllers', 'ProductsController.cs'), text);
+    const { controllers, requestModels } = await analyzeAspNetSource(root);
+    return JSON.stringify({ endpoints: controllers[0].endpoints, properties: requestModels[0].properties });
+  }
+
+  assert.equal(await analyze(source.replace(/\n/g, '\r\n')), await analyze(source),
+    'a checkout with CRLF endings must analyze the same as one with LF');
+});
