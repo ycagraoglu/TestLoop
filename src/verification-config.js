@@ -52,6 +52,19 @@ function assertNoInlineSecrets(value, pathLabel) {
   }
 }
 
+// A credential header is refused for the same reason as one in `auth`, but the remedy is different,
+// so it gets its own message. There is no `$env` substitution for headers, and hand-writing one is
+// never the answer anyway: authentication comes from the run's `auth`, and `anonymous: true`
+// withholds it. Writing a second identity's token here appears to work and then fails silently —
+// the persisted config redacts the value, so a resumed run sends the literal string "[REDACTED]"
+// and is refused by the API.
+function assertNoCredentialHeaders(scenario) {
+  for (const name of Object.keys(scenario.headers ?? {})) {
+    if (!SENSITIVE_KEYS.test(name)) continue;
+    throw new Error(`Scenario ${scenario.id} sets a credential header (${name}). Credentials come from the run's auth block; set "anonymous": true to withhold them. Running a scenario as a second identity is not supported.`);
+  }
+}
+
 export function expectedStatusesFor(scenario) {
   if (Array.isArray(scenario.expectedStatuses) && scenario.expectedStatuses.length > 0) {
     return scenario.expectedStatuses;
@@ -69,6 +82,7 @@ function validateScenario(scenario) {
   if (scenario.anonymous !== undefined && typeof scenario.anonymous !== 'boolean') {
     throw new Error(`Scenario ${scenario.id} has a non-boolean anonymous flag.`);
   }
+  assertNoCredentialHeaders(scenario);
   if (scenario.expectedStatuses !== undefined) {
     const valid = Array.isArray(scenario.expectedStatuses) &&
       scenario.expectedStatuses.every(status => Number.isInteger(status) && status >= 100 && status <= 599);

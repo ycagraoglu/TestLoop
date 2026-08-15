@@ -138,6 +138,13 @@ form-encoded credentials safely needs first-class support, which does not exist 
 OAuth2 token endpoint (Keycloak, IdentityServer, Auth0, Azure AD) cannot be used as the login URL
 today, because `{ "$env": … }` is resolved in objects, not inside strings.
 
+A scenario may not set a credential header of its own. Authentication comes from the run's `auth`,
+and `anonymous: true` withholds it; anything else is refused before the run starts. Writing a second
+identity's token into a scenario appears to work and then fails silently, because the persisted
+config redacts the value and a resumed run sends the literal string `[REDACTED]`. Running a scenario
+as a second identity is not supported yet — a header that carries test intent rather than a
+credential, such as a tenant override, is unaffected.
+
 If the token endpoint fails or the token is missing at `tokenPath`, the run ends `BLOCKED` without
 executing a single scenario. A 401 or 403 *during* a scenario is classified `AUTH_ERROR` and reported
 as `BLOCKED` — unless the scenario expected that status, which is a `PASS` (deep mode asserts 401/403

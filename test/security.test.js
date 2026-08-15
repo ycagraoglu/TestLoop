@@ -134,3 +134,20 @@ test('strips an embedded credential from a persisted string, not just from keyed
   assert.equal(persisted.scenarios[0].body, '[REDACTED]');
   assert.equal(persisted.scenarios[0].path, '/api/products', 'ordinary strings are untouched');
 });
+
+test('refuses a credential header on a scenario, where redaction would break it silently', () => {
+  const base = { baseUrl: 'http://localhost', scenarios: [{ id: 'x', method: 'GET', path: '/x' }] };
+  const withHeaders = headers => ({ ...base, scenarios: [{ id: 'as-someone-else', method: 'GET', path: '/x', headers }] });
+
+  assert.throws(
+    () => validateVerificationConfig(withHeaders({ authorization: 'Bearer eyJhbGciOi.some.token' })),
+    /sets a credential header \(authorization\).*anonymous.*second identity is not supported/s
+  );
+  assert.throws(() => validateVerificationConfig(withHeaders({ cookie: 'session=abc' })), /credential header/);
+
+  // Headers that carry test intent rather than credentials must keep working: this is how a
+  // tenant-override check is written today.
+  assert.doesNotThrow(() => validateVerificationConfig(withHeaders({ 'X-Tenant-Id': 'globex' })));
+  assert.doesNotThrow(() => validateVerificationConfig(withHeaders({ 'content-type': 'application/json' })));
+  assert.doesNotThrow(() => validateVerificationConfig(withHeaders({ 'X-Correlation-Id': 'run-1' })));
+});
