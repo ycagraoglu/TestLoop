@@ -13,7 +13,8 @@ Read this first. Most surprises come from pointing it at a project shaped differ
 | Area | Support | Notes |
 | --- | --- | --- |
 | Controller-based ASP.NET Core | **Full** | Routes, actions, `[Authorize]`, request models, entities and EF Core foreign keys are read from source. |
-| Minimal APIs (`app.MapGet(...)`) | **Partial** | HTTP execution, scaffolding from OpenAPI and the whole repair loop work. Source analysis does not, so request models, validator-derived boundary tests and foreign-key fixtures must be written by hand. `analyze` says so rather than returning a silent zero. |
+| Request models | **Full** | Classes and records, including positional records (`public record CreateProductRequest(string Name, ...)`). |
+| Minimal APIs (`app.MapGet(...)`) | **Full** | Routes, `MapGroup` prefixes (including nested groups), `RequireAuthorization` and `AllowAnonymous`, handler signatures and positional records are read, so scaffolding and deep-mode negatives work the same as for controllers. A map call whose route is not a literal string is skipped rather than guessed. |
 | OpenAPI / Swagger document | **Required** for `plan`, `scaffold` and response-contract checking | `run` itself does not need one. |
 | EF Core foreign keys | **Yes** | `HasOne<T>(...).HasForeignKey(...)`. Other configurations fall back to matching a `<Entity>Id` property against a discovered entity. |
 | FluentValidation | **Yes** | `NotEmpty`, `MinimumLength`, `MaximumLength`, `GreaterThan` become deterministic payloads and deep-mode boundary tests. |

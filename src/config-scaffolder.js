@@ -58,8 +58,10 @@ function buildScenario({ operation, consumerToProducer, producerIds, collectionR
   // Only the creating POST captures an id; the scenarios that consume it have nothing to hand on.
   if (producerIds.has(id)) scenario.capture = { id: 'id' };
 
+  // A model with no readable properties is worse than none: the payload builder would send an empty
+  // body and the endpoint would reject it for a reason that has nothing to do with the test.
   const model = models.get(operation.source?.requestType);
-  if (operation.requiresBody && model) {
+  if (operation.requiresBody && model?.properties?.length > 0) {
     scenario.requestModel = {
       name: model.name,
       properties: model.properties,

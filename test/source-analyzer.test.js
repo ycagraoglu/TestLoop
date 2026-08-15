@@ -121,22 +121,31 @@ public class CategoriesController : ControllerBase
   assert.deepEqual(remove.authorize.roles, ['Admin'], 'a method-level [Authorize] still wins over the class one');
 });
 
-test('explains an empty result instead of returning a silent zero', async () => {
+test('reads endpoints mapped straight onto the application', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'testloop-minimal-'));
   // The shape `dotnet new webapi` produces with no flags, which is the default since .NET 6.
   await writeFile(path.join(root, 'Program.cs'), `
 var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
 app.MapGet("/weatherforecast", () => Results.Ok());
-app.MapPost("/orders", (Order order) => Results.Created());
+app.MapPost("/orders", (CreateOrderRequest request) => Results.Created());
 app.MapControllers();
-app.Run();`);
+app.Run();
+
+public record CreateOrderRequest(string Reference, decimal Total);`);
 
   const result = await analyzeAspNetSource(root);
-  assert.equal(result.summary.controllers, 0);
   assert.equal(result.summary.minimalApiEndpoints, 2, 'MapControllers() is not an endpoint');
-  assert.match(result.diagnostics[0], /minimal APIs/);
-  assert.match(result.diagnostics[0], /scaffolded from the OpenAPI document and executed/, 'says what still works, not only what does not');
+  assert.deepEqual(result.diagnostics, [], 'a project it can read gets no notes');
+
+  const endpoints = result.controllers[0].endpoints;
+  assert.deepEqual(endpoints.map(item => `${item.method} ${item.route}`), ['GET /weatherforecast', 'POST /orders']);
+  assert.equal(endpoints[1].requestType, 'CreateOrderRequest');
+  assert.deepEqual(
+    result.requestModels[0].properties.map(item => `${item.type} ${item.name}`),
+    ['string Reference', 'decimal Total'],
+    'a positional record declares its properties in the header and often has no body at all'
+  );
 });
 
 test('points at the directory when there is nothing to read', async () => {

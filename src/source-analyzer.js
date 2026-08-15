@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { analyzeMinimalApiEndpoints } from './minimal-api-analyzer.js';
 import { collectProjectFiles } from './project-files.js';
 
 // An attribute argument can itself contain brackets, and the most common one in ASP.NET Core does:
@@ -8,11 +9,6 @@ import { collectProjectFiles } from './project-files.js';
 // and every [Authorize] on the declaration. One level of nesting covers the realistic cases.
 const ATTRIBUTE = String.raw`\[(?:[^[\]]|\[[^[\]]*\])*\]`;
 const ATTRIBUTE_LIST = String.raw`(?:\s*${ATTRIBUTE}\s*)`;
-
-// Endpoints mapped straight onto the app (minimal APIs) rather than declared on a controller. Not
-// analyzable here, but worth counting: it is the difference between "this tool is broken" and "this
-// project is shaped in a way the analyzer does not read".
-const MINIMAL_API_ENDPOINT = /\.\s*Map(?:Get|Post|Put|Patch|Delete)\s*\(/g;
 
 const HTTP_ATTRIBUTES = new Map([
   ['HttpGet', 'GET'],
@@ -26,8 +22,20 @@ export async function analyzeAspNetSource(root = process.cwd()) {
   const files = await collectCsFiles(root);
   const parsed = await Promise.all(files.map(async file => parseSourceFile(root, file, await readFile(file, 'utf8'))));
 
-  const controllers = parsed.flatMap(x => x.controllers);
-  const minimalApiEndpoints = parsed.reduce((total, item) => total + item.minimalApiEndpoints, 0);
+  // Minimal API endpoints join the manifest as one synthetic group per file. Everything downstream
+  // reads `controllers[].endpoints`, and a file like ProductEndpoints.cs is the unit these projects
+  // are organised by anyway, so it also groups the plan sensibly.
+  const controllers = [
+    ...parsed.flatMap(x => x.controllers),
+    ...parsed.filter(x => x.minimalApi.length > 0).map(x => ({
+      name: path.basename(x.file, '.cs'),
+      file: x.file,
+      route: null,
+      authorize: null,
+      endpoints: x.minimalApi
+    }))
+  ];
+  const minimalApiEndpoints = parsed.reduce((total, item) => total + item.minimalApi.length, 0);
   const requestModels = parsed.flatMap(x => x.requestModels);
   const validators = parsed.flatMap(x => x.validators);
   const entities = parsed.flatMap(x => x.entities);
@@ -75,13 +83,7 @@ function explainResults({ root, fileCount, controllers, minimalApiEndpoints }) {
     return diagnostics;
   }
 
-  if (controllers.length === 0 && minimalApiEndpoints > 0) {
-    diagnostics.push(
-      `Found ${minimalApiEndpoints} endpoint${minimalApiEndpoints === 1 ? '' : 's'} mapped directly on the application (minimal APIs) and no controllers. ` +
-      'Source analysis reads controller-based projects, so request models, validator rules and foreign-key dependencies cannot be derived here. ' +
-      'Scenarios can still be scaffolded from the OpenAPI document and executed against the running API; their fixtures have to be written by hand.'
-    );
-  } else if (controllers.length === 0) {
+  if (controllers.length === 0) {
     diagnostics.push(`No controllers were found in ${fileCount} C# file${fileCount === 1 ? '' : 's'}. TestLoop analyzes controller-based ASP.NET Core projects.`);
   } else if (endpoints === 0) {
     diagnostics.push(`${controllers.length} controller${controllers.length === 1 ? '' : 's'} were found but no actions could be read from them. This is likely an analyzer limitation rather than an empty project; the run configuration can still be written by hand.`);
@@ -97,12 +99,13 @@ async function collectCsFiles(root) {
 function parseSourceFile(root, file, source) {
   const relativePath = path.relative(root, file);
   return {
+    file: relativePath,
+    minimalApi: analyzeMinimalApiEndpoints(source),
     controllers: parseControllers(relativePath, source),
     requestModels: parseRequestModels(relativePath, source),
     validators: parseValidators(relativePath, source),
     entities: parseEntities(relativePath, source),
-    foreignKeys: parseForeignKeys(relativePath, source),
-    minimalApiEndpoints: [...source.matchAll(MINIMAL_API_ENDPOINT)].length
+    foreignKeys: parseForeignKeys(relativePath, source)
   };
 }
 
@@ -155,13 +158,46 @@ function parseActions(body, baseRoute, inheritedAuthorize) {
 }
 
 function parseRequestModels(file, source) {
-  const results = [];
-  const classRegex = /public\s+(?:sealed\s+)?(?:class|record)\s+(?<name>\w+(?:Request|Command|Dto))\b[^\{]*\{/g;
+  const results = new Map();
+
+  // A positional record declares its properties in the header and often has no body at all, which is
+  // the usual shape in minimal API projects: `public record CreateProductRequest(string Name, ...);`
+  const positionalRegex = /public\s+(?:sealed\s+)?record(?:\s+(?:class|struct))?\s+(?<name>\w+(?:Request|Command|Dto))\s*\((?<parameters>[^)]*)\)/g;
+  for (const match of source.matchAll(positionalRegex)) {
+    const properties = splitTopLevel(match.groups.parameters)
+      .map(part => part.trim())
+      .filter(Boolean)
+      .map(toPositionalProperty)
+      .filter(property => property.name && property.type);
+    if (properties.length > 0) results.set(match.groups.name, { name: match.groups.name, file, properties, validator: null, dependencies: [] });
+  }
+
+  // `[^;{]*` stops the search at the end of a statement. Without it, a bodyless record swallows
+  // everything up to the next type's opening brace and reports itself with no properties at all.
+  const classRegex = /public\s+(?:sealed\s+)?(?:class|record)\s+(?<name>\w+(?:Request|Command|Dto))\b[^;{]*\{/g;
   for (const match of source.matchAll(classRegex)) {
     const body = extractBlock(source, match.index + match[0].lastIndexOf('{'));
-    results.push({ name: match.groups.name, file, properties: parseProperties(body), validator: null, dependencies: [] });
+    const properties = parseProperties(body);
+    const existing = results.get(match.groups.name);
+    if (existing && properties.length === 0) continue;
+    results.set(match.groups.name, {
+      name: match.groups.name,
+      file,
+      properties: [...(existing?.properties ?? []), ...properties],
+      validator: null,
+      dependencies: []
+    });
   }
-  return results;
+
+  return [...results.values()];
+}
+
+function toPositionalProperty(text) {
+  const clean = text.replace(/^(?:\[[^\]]*\]\s*)+/, '').replace(/=.*$/, '').trim();
+  const parts = clean.split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return { name: '', type: '', required: false, attributes: [] };
+  const type = compactType(parts.slice(0, -1).join(' '));
+  return { name: parts.at(-1), type, required: !type.endsWith('?'), attributes: [] };
 }
 
 function parseEntities(file, source) {

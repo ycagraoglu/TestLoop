@@ -77,7 +77,7 @@ Do not invent command flags. When an interface is unclear, run `testloop --help`
 
 ## Supported MVP profile
 
-- controller-based ASP.NET Core Web API;
+- controller-based ASP.NET Core Web API, or endpoints mapped directly (minimal APIs);
 - OpenAPI / Swagger;
 - Entity Framework Core;
 - FluentValidation or DataAnnotations;
