@@ -120,3 +120,43 @@ public class CategoriesController : ControllerBase
   assert.deepEqual(list.authorize.roles, []);
   assert.deepEqual(remove.authorize.roles, ['Admin'], 'a method-level [Authorize] still wins over the class one');
 });
+
+test('explains an empty result instead of returning a silent zero', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'testloop-minimal-'));
+  // The shape `dotnet new webapi` produces with no flags, which is the default since .NET 6.
+  await writeFile(path.join(root, 'Program.cs'), `
+var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+app.MapGet("/weatherforecast", () => Results.Ok());
+app.MapPost("/orders", (Order order) => Results.Created());
+app.MapControllers();
+app.Run();`);
+
+  const result = await analyzeAspNetSource(root);
+  assert.equal(result.summary.controllers, 0);
+  assert.equal(result.summary.minimalApiEndpoints, 2, 'MapControllers() is not an endpoint');
+  assert.match(result.diagnostics[0], /minimal APIs/);
+  assert.match(result.diagnostics[0], /scaffolded from the OpenAPI document and executed/, 'says what still works, not only what does not');
+});
+
+test('points at the directory when there is nothing to read', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'testloop-nosource-'));
+  const result = await analyzeAspNetSource(root);
+  assert.match(result.diagnostics[0], /No C# sources were found/);
+});
+
+test('stays quiet when the project is the shape it reads', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'testloop-quiet-'));
+  await mkdir(path.join(root, 'Controllers'));
+  await writeFile(path.join(root, 'Controllers', 'ProductsController.cs'), `
+[ApiController]
+[Route("api/[controller]")]
+public class ProductsController : ControllerBase
+{
+    [HttpGet]
+    public IActionResult GetAll() { }
+}`);
+
+  const result = await analyzeAspNetSource(root);
+  assert.deepEqual(result.diagnostics, [], 'a project it can read gets no notes');
+});

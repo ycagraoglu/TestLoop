@@ -6,6 +6,28 @@ TestLoop is an agent-native verification workflow for ASP.NET Core Web APIs. It 
 
 TestLoop includes an [Agent Skills](https://agentskills.io/) compatible skill at `skills/testloop/SKILL.md` and a deterministic CLI that performs the underlying project analysis and test execution.
 
+## What TestLoop supports
+
+Read this first. Most surprises come from pointing it at a project shaped differently than it reads.
+
+| Area | Support | Notes |
+| --- | --- | --- |
+| Controller-based ASP.NET Core | **Full** | Routes, actions, `[Authorize]`, request models, entities and EF Core foreign keys are read from source. |
+| Minimal APIs (`app.MapGet(...)`) | **Partial** | HTTP execution, scaffolding from OpenAPI and the whole repair loop work. Source analysis does not, so request models, validator-derived boundary tests and foreign-key fixtures must be written by hand. `analyze` says so rather than returning a silent zero. |
+| OpenAPI / Swagger document | **Required** for `plan`, `scaffold` and response-contract checking | `run` itself does not need one. |
+| EF Core foreign keys | **Yes** | `HasOne<T>(...).HasForeignKey(...)`. Other configurations fall back to matching a `<Entity>Id` property against a discovered entity. |
+| FluentValidation | **Yes** | `NotEmpty`, `MinimumLength`, `MaximumLength`, `GreaterThan` become deterministic payloads and deep-mode boundary tests. |
+| DataAnnotations | **Partial** | `[Required]` is read. `[Range]`, `[MaxLength]` and friends are not turned into boundary tests. |
+| JWT bearer, and login endpoints taking a JSON body | **Yes** | The token is attached to every request, including fixture lookups, and refreshed before a retest. |
+| OAuth2 token endpoints (Keycloak, IdentityServer, Auth0, Azure AD) | **No** | They require a form-encoded body, and credentials cannot be referenced safely there yet. |
+| Multi-tenancy | **Not modelled** | A tenant-header override check can be written by hand; running a scenario as a second identity is not supported. |
+| Test-database access | **No** | Fixtures come from HTTP endpoints only. |
+| Destructive scenarios (`DELETE`) | **Opt-in** | Never scaffolded automatically; `cleanup: true` removes only records the run itself created. |
+
+**Environments.** Node.js 20 or newer is declared; development and testing so far have been on Node 23,
+macOS, and .NET 10 against controller-based projects. Windows and older .NET versions are not yet
+verified — reports from those are welcome and are the most useful kind of issue to open.
+
 ## Trust rule
 
 An endpoint is never marked as failed until authentication, persisted dependencies, foreign keys, validation constraints, tenant context, and relevant business preconditions are verified. Unresolved preconditions are `BLOCKED`, never fake failures.

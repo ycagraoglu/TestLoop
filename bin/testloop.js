@@ -24,7 +24,7 @@ try {
     case 'analyze': {
       const root = args[0] ?? process.cwd();
       await ensureDirectoryExists(root);
-      print(await analyzeAspNetSource(root));
+      print(explain(await analyzeAspNetSource(root)));
       break;
     }
     case 'openapi': {
@@ -37,7 +37,7 @@ try {
       const openApiSource = required(args[0], 'OpenAPI URL');
       const root = args[1] ?? process.cwd();
       const document = await loadOpenApi(openApiSource);
-      const sourceManifest = await analyzeAspNetSource(root);
+      const sourceManifest = explain(await analyzeAspNetSource(root));
       print(buildTestPlan({ operations: listOperations(document), sourceManifest, mode: args[2] ?? 'standard' }));
       break;
     }
@@ -45,7 +45,7 @@ try {
       const openApiSource = required(args[0], 'OpenAPI URL');
       const root = args[1] ?? process.cwd();
       const document = await loadOpenApi(openApiSource);
-      const sourceManifest = await analyzeAspNetSource(root);
+      const sourceManifest = explain(await analyzeAspNetSource(root));
       const plan = buildTestPlan({ operations: listOperations(document), sourceManifest, mode: args[2] ?? 'standard' });
       print(scaffoldRunConfig({ plan, sourceManifest, baseUrl: new URL(openApiSource).origin, openApiUrl: openApiSource }));
       break;
@@ -100,6 +100,13 @@ try {
 
 function print(value) {
   console.log(JSON.stringify(value, null, 2));
+}
+
+// Diagnostics go to stderr so they are read even when stdout is piped into a file, and so the JSON
+// contract of every command stays exactly what it was.
+function explain(manifest) {
+  for (const diagnostic of manifest.diagnostics ?? []) console.error(`note: ${diagnostic}`);
+  return manifest;
 }
 
 function required(value, name) {

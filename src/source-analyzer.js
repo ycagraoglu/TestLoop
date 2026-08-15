@@ -9,6 +9,11 @@ import { collectProjectFiles } from './project-files.js';
 const ATTRIBUTE = String.raw`\[(?:[^[\]]|\[[^[\]]*\])*\]`;
 const ATTRIBUTE_LIST = String.raw`(?:\s*${ATTRIBUTE}\s*)`;
 
+// Endpoints mapped straight onto the app (minimal APIs) rather than declared on a controller. Not
+// analyzable here, but worth counting: it is the difference between "this tool is broken" and "this
+// project is shaped in a way the analyzer does not read".
+const MINIMAL_API_ENDPOINT = /\.\s*Map(?:Get|Post|Put|Patch|Delete)\s*\(/g;
+
 const HTTP_ATTRIBUTES = new Map([
   ['HttpGet', 'GET'],
   ['HttpPost', 'POST'],
@@ -22,6 +27,7 @@ export async function analyzeAspNetSource(root = process.cwd()) {
   const parsed = await Promise.all(files.map(async file => parseSourceFile(root, file, await readFile(file, 'utf8'))));
 
   const controllers = parsed.flatMap(x => x.controllers);
+  const minimalApiEndpoints = parsed.reduce((total, item) => total + item.minimalApiEndpoints, 0);
   const requestModels = parsed.flatMap(x => x.requestModels);
   const validators = parsed.flatMap(x => x.validators);
   const entities = parsed.flatMap(x => x.entities);
@@ -45,15 +51,43 @@ export async function analyzeAspNetSource(root = process.cwd()) {
     validators,
     entities,
     foreignKeys,
+    diagnostics: explainResults({ root, fileCount: files.length, controllers, minimalApiEndpoints }),
     summary: {
       controllers: controllers.length,
       endpoints: controllers.reduce((sum, controller) => sum + controller.endpoints.length, 0),
       requestModels: requestModels.length,
       validators: validators.length,
       entities: entities.length,
-      foreignKeys: foreignKeys.length
+      foreignKeys: foreignKeys.length,
+      minimalApiEndpoints
     }
   };
+}
+
+// An empty manifest is the analyzer's most confusing output: it looks like a broken tool rather than
+// an unread project. Every way of arriving at one gets an explanation naming the actual cause.
+function explainResults({ root, fileCount, controllers, minimalApiEndpoints }) {
+  const endpoints = controllers.reduce((sum, controller) => sum + controller.endpoints.length, 0);
+  const diagnostics = [];
+
+  if (fileCount === 0) {
+    diagnostics.push(`No C# sources were found under ${root}. Check that this is the project or solution directory.`);
+    return diagnostics;
+  }
+
+  if (controllers.length === 0 && minimalApiEndpoints > 0) {
+    diagnostics.push(
+      `Found ${minimalApiEndpoints} endpoint${minimalApiEndpoints === 1 ? '' : 's'} mapped directly on the application (minimal APIs) and no controllers. ` +
+      'Source analysis reads controller-based projects, so request models, validator rules and foreign-key dependencies cannot be derived here. ' +
+      'Scenarios can still be scaffolded from the OpenAPI document and executed against the running API; their fixtures have to be written by hand.'
+    );
+  } else if (controllers.length === 0) {
+    diagnostics.push(`No controllers were found in ${fileCount} C# file${fileCount === 1 ? '' : 's'}. TestLoop analyzes controller-based ASP.NET Core projects.`);
+  } else if (endpoints === 0) {
+    diagnostics.push(`${controllers.length} controller${controllers.length === 1 ? '' : 's'} were found but no actions could be read from them. This is likely an analyzer limitation rather than an empty project; the run configuration can still be written by hand.`);
+  }
+
+  return diagnostics;
 }
 
 async function collectCsFiles(root) {
@@ -67,7 +101,8 @@ function parseSourceFile(root, file, source) {
     requestModels: parseRequestModels(relativePath, source),
     validators: parseValidators(relativePath, source),
     entities: parseEntities(relativePath, source),
-    foreignKeys: parseForeignKeys(relativePath, source)
+    foreignKeys: parseForeignKeys(relativePath, source),
+    minimalApiEndpoints: [...source.matchAll(MINIMAL_API_ENDPOINT)].length
   };
 }
 
