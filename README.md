@@ -82,23 +82,46 @@ Node.js 20 or newer is required. The runner has no runtime npm dependencies. Ver
 npm run skill:check
 ```
 
-## Agent Skill
+## Installing into an agent
 
-The portable skill is located at:
+The CLI and the agent integration are two separate things. `npm install -g testloop` gives you the
+`testloop` command; the steps below are what makes an agent reach for it on its own.
 
-```text
-skills/testloop/SKILL.md
+### Claude Code
+
+```bash
+claude plugin marketplace add ycagraoglu/TestLoop
+claude plugin install testloop@testloop
 ```
 
-Its frontmatter uses the standard `name`, `description`, `license`, `compatibility`, and `metadata` fields. The skill documents the `smoke`, `standard`, and `deep` modes and instructs compatible agents to delegate deterministic operations to the TestLoop CLI.
+### Gemini CLI
 
-Clients that use the cross-client `.agents/skills/` discovery convention can install or copy the `skills/testloop` directory into:
-
-```text
-.agents/skills/testloop/
+```bash
+gemini extensions install https://github.com/ycagraoglu/TestLoop
 ```
 
-The Agent Skills specification defines the contents of a skill directory; installation and discovery locations may vary by client.
+The extension manifest points Gemini at `AGENTS.md` for always-on context, and `skills/testloop/`
+is picked up as a skill.
+
+### Codex, and anything else that reads `AGENTS.md`
+
+Copy [`AGENTS.md`](AGENTS.md) into the root of the project you want tested, or into `~/.codex/AGENTS.md`
+to have it apply everywhere. The same file works for any agent that reads a root context file.
+
+For fuller instructions than the always-on context carries, point the agent at
+[`skills/testloop/SKILL.md`](skills/testloop/SKILL.md).
+
+### Any client using the `.agents/skills/` convention
+
+Copy the `skills/testloop` directory into `.agents/skills/testloop/`.
+
+The skill's frontmatter uses the standard `name`, `description`, `license`, `compatibility` and
+`metadata` fields, and documents the `smoke`, `standard` and `deep` modes. The Agent Skills
+specification defines a skill directory's contents; discovery locations vary by client.
+
+**One list of rules, two files.** `AGENTS.md` repeats the non-negotiable rules from `SKILL.md`, because
+an agent that reads only a root context file still needs them. `npm run agents:check` fails if the two
+ever disagree, so a rule cannot quietly mean one thing to Claude and another to Codex.
 
 ## Commands
 

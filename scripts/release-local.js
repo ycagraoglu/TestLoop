@@ -9,6 +9,7 @@ const VERSION_FILES = [
   'package-lock.json',
   '.claude-plugin/plugin.json',
   '.claude-plugin/marketplace.json',
+  'gemini-extension.json',
   'skills/testloop/SKILL.md',
   'CHANGELOG.md'
 ];
@@ -85,6 +86,7 @@ async function updateVersionFiles(nextVersion, releaseNotes) {
     return value;
   });
   await updateJson('.claude-plugin/plugin.json', value => ({ ...value, version: nextVersion }));
+  await updateJson('gemini-extension.json', value => ({ ...value, version: nextVersion }));
   await updateJson('.claude-plugin/marketplace.json', value => ({
     ...value,
     plugins: (value.plugins ?? []).map(plugin => plugin.name === 'testloop' ? { ...plugin, version: nextVersion } : plugin)

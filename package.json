@@ -7,27 +7,30 @@
     "testloop": "./bin/testloop.js"
   },
   "files": [
+    "AGENTS.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md",
+    "agents",
     "bin",
-    "src",
+    "gemini-extension.json",
+    "schemas",
     "scripts",
     "skills",
-    "agents",
-    "schemas",
+    "src",
     "templates",
-    ".claude-plugin",
-    "README.md",
-    "LICENSE",
-    "CHANGELOG.md"
+    ".claude-plugin"
   ],
   "scripts": {
     "test": "node --test",
     "check": "node scripts/check.js",
     "skill:check": "node scripts/validate-skill.js",
-    "verify": "npm run check && npm run skill:check && npm test && npm run pack:check",
+    "verify": "npm run check && npm run skill:check && npm run agents:check && npm test && npm run pack:check",
     "pack:check": "node scripts/package-check.js",
     "release:check": "node scripts/release-local.js --dry-run",
     "release": "node scripts/release-local.js",
-    "prepack": "npm run check && npm run skill:check && npm test"
+    "prepack": "npm run check && npm run skill:check && npm run agents:check && npm test",
+    "agents:check": "node scripts/check-agent-docs.js"
   },
   "engines": {
     "node": ">=20"
