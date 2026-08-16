@@ -36,8 +36,9 @@ without a shell, so point them at an interpreter (`["node", "./agents/diagnose.m
 remains unverified is everything that needs the platform itself: process lifecycle, `dotnet`
 discovery, and the fix role's rebuild-and-restart step. Older .NET versions are likewise untested.
 
-Reports from Windows or from .NET 6/8 are the most useful kind of issue to open; attach the run's
-`report.md` and `summary.json`.
+Reports from Windows or from .NET 6/8 are the most useful kind of issue to open. Run `testloop version`
+and paste the run's `report.md`; the issue forms ask for both, and with them most reports can be
+answered without a round of questions.
 
 ## Trust rule
 

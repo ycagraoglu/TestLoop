@@ -1,0 +1,74 @@
+name: Something behaved wrong
+description: A run, a command, or a repair did something other than what it should have.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A run writes `.testloop/runs/<run-id>/report.md`. Pasting it below usually answers most of
+        this form on its own, and is the single most useful thing you can include.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what did you expect instead?
+      placeholder: |
+        The run reported PASS, but the endpoint returns 500 when I call it by hand.
+    validations:
+      required: true
+
+  - type: textarea
+    id: command
+    attributes:
+      label: The exact command you ran
+      render: shell
+      placeholder: testloop run ./testloop.config.json
+    validations:
+      required: true
+
+  - type: textarea
+    id: report
+    attributes:
+      label: Contents of the run's report.md
+      description: From `.testloop/runs/<run-id>/report.md`. Redact anything sensitive first.
+      render: markdown
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: TestLoop version
+      description: Output of `testloop version`.
+      placeholder: testloop 0.5.0 (node v20.11.0, win32)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      description: Windows has not been verified end to end, so reports from it are especially useful.
+      options: [macOS, Linux, Windows, Other]
+    validations:
+      required: true
+
+  - type: input
+    id: dotnet
+    attributes:
+      label: .NET version
+      description: Output of `dotnet --version`. Leave blank if the problem does not involve a project.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: shape
+    attributes:
+      label: How does the API declare its endpoints?
+      options:
+        - Controllers
+        - Minimal APIs
+        - Both
+        - Not sure
+    validations:
+      required: true

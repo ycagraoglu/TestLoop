@@ -1,0 +1,51 @@
+name: TestLoop did not find my endpoints or models
+description: analyze, plan or scaffold came back empty or missed something that is in the source.
+labels: ["analyzer"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `testloop analyze` prints a `note:` line explaining an empty result. If you got one, paste it
+        below — and check the [support table](https://github.com/ycagraoglu/TestLoop#what-testloop-supports)
+        first, since some shapes are known not to be read yet.
+
+        What settles these fastest is the declaration itself. A few lines of the real C# is worth more
+        than any description of it.
+
+  - type: textarea
+    id: declaration
+    attributes:
+      label: The declaration TestLoop missed
+      description: The controller, endpoint mapping, request model or EF configuration, as it appears in your source.
+      render: csharp
+      placeholder: |
+        [ApiController]
+        [Route("api/v2/[controller]")]
+        public class ProductsController : ControllerBase
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: What TestLoop reported
+      description: The `summary` block from `testloop analyze`, plus any `note:` lines it printed.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected it to find
+      placeholder: Two endpoints on /api/v2/Products, and the CreateProductRequest model.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: TestLoop version
+      description: Output of `testloop version`.
+    validations:
+      required: true

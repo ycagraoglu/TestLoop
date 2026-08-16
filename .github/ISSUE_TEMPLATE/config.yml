@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Is my project shape supported?
+    url: https://github.com/ycagraoglu/TestLoop#what-testloop-supports
+    about: Minimal APIs, EF Core, FluentValidation, OAuth2, multi-tenancy and Windows are each listed with what does and does not work today.
+  - name: What did the run actually verify?
+    url: https://github.com/ycagraoglu/TestLoop/blob/main/docs/workflow.md
+    about: Every run writes a report.md whose "Not verified" section states the limits of its verdict.

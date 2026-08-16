@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ArtifactStore } from '../src/artifact-store.js';
 import { scaffoldRunConfig } from '../src/config-scaffolder.js';
 import { discoverDotnetProjects, ensureDirectoryExists } from '../src/discovery.js';
@@ -86,6 +88,15 @@ try {
       print(await resumeVerification({ root, runId, scenarioId, decision }));
       break;
     }
+    case 'version':
+    case '--version':
+    case '-v': {
+      // Asked for in every bug report, so it has to be printable without knowing how the package
+      // was installed.
+      const manifest = JSON.parse(await readFile(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'package.json'), 'utf8'));
+      console.log(`testloop ${manifest.version} (node ${process.version}, ${process.platform})`);
+      break;
+    }
     case 'help':
     case undefined:
       printHelp();
@@ -115,5 +126,5 @@ function required(value, name) {
 }
 
 function printHelp() {
-  console.log(`TestLoop\n\nCommands:\n  testloop discover [root]\n  testloop analyze [root]\n  testloop openapi <url>\n  testloop plan <openapi-url> [root] [mode]\n  testloop scaffold <openapi-url> [root] [mode]\n  testloop request <method> <url> [json-body]\n  testloop build <project-path>\n  testloop serve <project-path> [url] [environment]\n  testloop run <testloop.config.json>\n  testloop resume <run-id> <scenario-id> <approve|decline> [root]\n`);
+  console.log(`TestLoop\n\nCommands:\n  testloop discover [root]\n  testloop analyze [root]\n  testloop openapi <url>\n  testloop plan <openapi-url> [root] [mode]\n  testloop scaffold <openapi-url> [root] [mode]\n  testloop request <method> <url> [json-body]\n  testloop build <project-path>\n  testloop serve <project-path> [url] [environment]\n  testloop run <testloop.config.json>\n  testloop resume <run-id> <scenario-id> <approve|decline> [root]\n  testloop version\n`);
 }
