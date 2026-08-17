@@ -25,17 +25,18 @@ Read this first. Most surprises come from pointing it at a project shaped differ
 | Test-database access | **No** | Fixtures come from HTTP endpoints only. |
 | Destructive scenarios (`DELETE`) | **Opt-in** | Never scaffolded automatically; `cleanup: true` removes only records the run itself created. |
 
-**Environments.** The test suite runs in CI on Windows, Linux and macOS across Node 20, 22 and 24, and
-passes locally on Node 20, 22, 23 and 24.
+**Environments.** The suite passes on Node 20, 22, 23 and 24. All of that has been run on macOS, so
+Windows is listed as unverified rather than supported — no one has yet run TestLoop on it end to end.
 
-What CI covers is the runner: path handling, artifact writing, spawning role adapters, and the
-analyzers — including that source files with CRLF endings analyze identically to LF ones. One Windows
-detail is worth knowing up front: role commands are deliberately spawned without a shell, so `npm` and
-`npx`, which exist there only as `.cmd` shims, cannot be used as a role command. Point it at an
-interpreter instead (`["node", "./agents/diagnose.mjs"]`); the error says so if you forget.
+What could be checked without the platform has been: source files with CRLF endings analyze identically
+to LF ones, and no path is built by string concatenation. One Windows detail is worth knowing before
+you hit it: role commands are deliberately spawned without a shell, so `npm` and `npx`, which exist
+there only as `.cmd` shims, cannot be used as a role command. Point it at an interpreter instead
+(`["node", "./agents/diagnose.mjs"]`); the error says so if you forget.
 
-What no test covers on any platform is driving a real .NET application end to end — `testloop serve`
-starting it, and the fix role rebuilding and restarting it. That has been exercised by hand on macOS
+What remains unverified is everything that needs the platform itself — process lifecycle, `dotnet`
+discovery — and, on every platform, driving a real .NET application end to end: `testloop serve`
+starting it and the fix role rebuilding and restarting it. Those have been exercised by hand on macOS
 against .NET 10 only. Older .NET versions are untested.
 
 Reports from Windows or from .NET 6/8 are the most useful kind of issue to open. Run `testloop version`
@@ -79,7 +80,7 @@ npm link
 
 Node.js 20 or newer is required. The runner has no runtime npm dependencies, so there is nothing to install before verifying.
 
-Releasing is deliberately local: `npm run release` publishes from a maintainer's machine, and no workflow holds a token or publishes anything. Tests are the exception — they also run in CI on Windows, Linux and macOS across Node 20, 22 and 24, because that is the one thing local verification cannot cover.
+Verification and releasing are both local by design: `npm run verify` runs everything, and `npm run release` publishes from a maintainer's machine. No workflow holds a token or publishes anything.
 
 `npm run verify` performs JavaScript syntax checks, Agent Skills specification checks, automated tests, and npm package-content verification. The skill check can also be run independently:
 
